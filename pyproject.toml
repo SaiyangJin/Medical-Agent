@@ -1,0 +1,17 @@
+[project]
+name = "langchain-medical-agent"
+version = "0.1.0"
+description = "Agent 医疗知识图谱问答系统"
+requires-python = ">=3.10"
+dependencies = [
+    "httpx>=0.28.1",
+    "langchain>=1.4.0",
+    "langchain-openai>=1.6.2",
+    "langchain-postgres>=0.0.18",
+    "path>=17.1.1",
+    "pytest>=9.1.1",
+    "python-dotenv>=1.2.3",
+    "sqlalchemy>=2.0.54",
+]
+[tool.pytest.ini_options]
+pythonpath = ["."]

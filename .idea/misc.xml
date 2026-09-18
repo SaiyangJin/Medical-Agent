@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Black">
+    <option name="sdkName" value="uv (LangChain-Medical-Agent)" />
+  </component>
+  <component name="ProjectRootManager" version="2" project-jdk-name="uv (LangChain-Medical-Agent)" project-jdk-type="Python SDK">
+    <output url="file://$PROJECT_DIR$/out" />
+  </component>
+</project>
