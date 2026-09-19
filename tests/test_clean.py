@@ -1,4 +1,4 @@
-#第一段爬虫程序
+#第一段爬虫程序,测试从wiki爬出资料文献，并进行简单清理
 
 import httpx
 import re
@@ -24,8 +24,8 @@ def clean_wikitext(raw: str) -> str:
     raw = re.sub(r"<ref[^>]*/>", "", raw)          # 自闭合的 <ref name="x"/>
 
     # 4~6. 图片 / 分类 / 跨语言链接
-    #      必须在普通链接[[A|B]]之前处理，否则会被误当成正文链接，
-    #      留下 "thumb|说明" 这种垃圾碎片
+    #必须在普通链接[[A|B]]之前处理，否则会被误当成正文链接，
+    #留下 "thumb|说明" 这种垃圾碎片
     raw = re.sub(r"\[\[(?:File|Image|文件|檔案):[^\[\]]*]]", "", raw, flags=re.IGNORECASE)
     raw = re.sub(r"\[\[(?:Category|分类|分類):[^\[\]]*]]", "", raw, flags=re.IGNORECASE)
     raw = re.sub(r"\[\[[a-z]{2}(?:-[a-z]+)?:[^\[\]]*]]", "", raw)   # 如 [[en:Diabetes]]

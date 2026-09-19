@@ -1,4 +1,4 @@
-#把父子向量化到数据的脚本
+#把父子插入数据库的脚本
 
 #导入json字符串转化对象包
 import json
@@ -16,7 +16,7 @@ from langchain_openai import OpenAIEmbeddings
 from sqlalchemy import insert, Table, MetaData,create_engine,select
 
 #当前的根路径
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 #父块路径
 PARENT_PATH = ROOT / 'data' / 'chunk' / 'parent.jsonl'
 #字块路径
@@ -40,8 +40,8 @@ pg_vector = PGVector(embeddingModel,
                      connection=DATA_BASE_URL,
                      collection_name="disease-child-chuck",
                      use_jsonb=True,
-                     #插入之前先删表的元素（开发阶段）
-                     pre_delete_collection=True)
+                     # pre_delete_collection=True #插入之前先删表的元素（开发阶段）
+                     )
 #打开文件开始构建父Chunk
 
 
@@ -59,15 +59,12 @@ def find(question:str,k=5):
         #2.1取到父id
         parent_id = search_re.metadata['parent_id']
         parent_ids.add(parent_id)
-    #3，sql查询父块
+    #3，sql查询父块，注意加mapping才能形成字典模式,才能按名字去取
     with engine.begin() as conn:
         execute_res = conn.execute(
-            select(disease_parent_chuck_table).where(disease_parent_chuck_table.c.id.in_(parent_ids)))
+            select(disease_parent_chuck_table).where(disease_parent_chuck_table.c.id.in_(parent_ids))).mappings()
     #4，解析结果
-    for res in execute_res:
-        print(res)
-
-
+    return execute_res
 
 
 

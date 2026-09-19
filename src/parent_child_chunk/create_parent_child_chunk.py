@@ -9,12 +9,14 @@ import json
 
 #======================================常量区=====================================
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "data"
 
-# SOURCE_PATH = DATA / "cleaned" / "full.jsonl"
+SOURCE_PATH = DATA / "cleaned" / "full.jsonl"
 # SOURCE_PATH = DATA / "cleaned" / "one.jsonl"
-SOURCE_PATH = DATA / "cleaned" / "small.jsonl"
+# SOURCE_PATH = DATA / "cleaned" / "small.jsonl"
+BLOCK_QID_PATH = DATA / "garbage" / "garbage_qid.txt"
+BLOCK_TITLE_PATH = DATA / "garbage" / "garbage_title.txt"
 
 CHUNK = DATA / "chunk"
 CHUNK.mkdir(exist_ok=True)
@@ -33,6 +35,13 @@ TITLE_REGIX=re.compile(r"^(={2,6})\s*(.+?)\s*\1\s*$", re.MULTILINE)
 SENTENCE_REGIX = re.compile(r"[^。！？；]+[。！？；]?")
 #======================================函数区=====================================
 
+#垃圾定义垃圾标题
+block_titles=set([])
+#存入垃圾数据id
+with open(BLOCK_TITLE_PATH,"r",encoding="utf-8") as garbage_titles:
+    for garbage_title in garbage_titles:
+        block_titles.add(garbage_title.strip())
+print(block_titles)
 # 父块切分函数,传入文本和疾病名，返回一个数组，里面是被处理好的大块+疾病名+父id+标题的json
 def parent_chunking(text : str,disease : str,qid:str,revision:str)->list:
     #这边指一个text的父块列表
@@ -58,18 +67,28 @@ def parent_chunking(text : str,disease : str,qid:str,revision:str)->list:
     })
     #1，循环遍历匹配到的标题结果
 
+
     for i,match in enumerate(matches):
         #enumerate函数自动维护计数器，就是i变量
         #1.1获取标题title
-        title = match.group(2)
+        match_title = match.group(2)
+        #1.2如果是垃圾标题，跳过
+        if match_title in block_titles:
+            continue
         start = match.start()
         end = match.end()
-        #1.2如果下一个i超限了，那就说明这是最后一个标题，最后一个标题的终点，是len(text),整段文本的终点
+        #1.3如果下一个i超限了，那就说明这是最后一个标题，最后一个标题的终点，是len(text),整段文本的终点
         if i+1>=len(matches):
             next_start=len(text)
+            text1 = text[end:next_start]
+            if text1.strip()== "" or text1.strip()== "\n":
+                continue
+                #去除行首的换行符
+            if text1.startswith("\n"):
+                text1=text1[1:len(text1)]
             one_parent_chunks.append({
-                "text": text[end:next_start],
-                "title": title,
+                "text": text1,
+                "title": match_title,
                 "id": qid+"-"+str(i+1),
                 "disease": disease,
                 "revision": revision,
@@ -78,9 +97,15 @@ def parent_chunking(text : str,disease : str,qid:str,revision:str)->list:
         #1.3根据下一个match的起始，和这个match的终点，trip去空格，取出中间的文本，就是一大段父Chunk
         next_start=matches[i+1].start()
         #1.4list[tuple[str,str]]，返回
+        text2 = text[end:next_start]
+        if text2.strip()== "" or text2.strip()== "\n":
+            continue
+            #去除行首的换行符
+        if text2.startswith("\n"):
+            text2=text2[1:len(text2)]
         one_parent_chunks.append({
-            "text": text[end:next_start],
-            "title": title,
+            "text": text2,
+            "title": match_title,
             "id": qid+"-"+str(i+1),
             "disease": disease,
             "revision": revision,
@@ -89,14 +114,20 @@ def parent_chunking(text : str,disease : str,qid:str,revision:str)->list:
 
 # 子块切分函数,传入文本和疾病名，返回一个json数组，json里面是被处理好的小块文本+其他需要保存的数据(id,parentid,disease,title,revision)
 def child_chunking(text : str,title:str,disease : str,revision:str,parent_id:str)->list:
-    max_length=600
+    max_length=500
     one_child_chunks=[]
 
     #1，先按照段落"\n\n"分出对应的段落数组,再交給句子分詞器處理,因为"\n"会分出很多没用的小段
     splits = text.split("\n\n")
     for i,split in enumerate(splits):
         #目前这就是一段。
-
+        #清理文本
+        #去除空行
+        if split.strip()== "" or split.strip()== "\n":
+            continue
+        #去除行首的换行符
+        if split.startswith("\n"):
+            split=split[1:len(split)]
         #1.1如果段落长度大于了max_length,那就交给句子分词器处理
         if len(split)>max_length:
             sentence_str=""
@@ -105,8 +136,13 @@ def child_chunking(text : str,title:str,disease : str,revision:str,parent_id:str
             for i,sentence in enumerate(list(sentences)):
                 sentence_text = sentence.group()
                 #如果句子文本是空的，就跳过，因为\n\n情况
-                if sentence_text== "" or sentence_text=="\n":
+                #清理文本
+                #去除空行
+                if sentence_text.strip()== "" or sentence_text.strip()== "\n":
                     continue
+                #去除行首的换行符
+                if sentence_text.startswith("\n"):
+                    sentence_text=sentence_text[1:len(sentence_text)]
                 if len(sentence_str + sentence_text)>max_length:
                     one_child_chunks.append({
                         "text": sentence_str,
@@ -153,17 +189,24 @@ if __name__ == '__main__':
     #先拿到full里边的原始文档
     child_chunks=[]
     parent_chunks=[]
-
-
+    #放垃圾数据
+    block_qids=set([])
+    #存入垃圾数据id
+    with open(BLOCK_QID_PATH,"r",encoding="utf-8") as f:
+        for line in f:
+            block_qids.add(line.strip())
     with open(SOURCE_PATH,"r",encoding="utf-8") as f:
         for line in f:
             #1,第一个模块，按标题分
             #line是一个疾病json字符串,先转化为json,再获取文本
+            #qid去除
+            qid = json.loads(line)["id"]
+            if block_qids and qid in block_qids:
+                continue
             text = json.loads(line)["text"]
+
             disease = json.loads(line)["disease"]
             revision = json.loads(line)["revision"]
-            qid = json.loads(line)["id"]
-
             #2，交给切大块函数（传入文本和disease）返回处理后的结果：一个数组里面是被处理好的大块+疾病名+id
             new_parent_chunks = parent_chunking(text, disease, qid,revision)
             parent_chunks+= new_parent_chunks

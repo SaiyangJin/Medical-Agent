@@ -1,5 +1,7 @@
+#预定义父表的脚本
+
 #导入区
-from sqlalchemy import MetaData, create_engine, Table, Column, BigInteger, Text,insert
+from sqlalchemy import MetaData, create_engine, Table, Column, Text
 
 #链接参数
 DB_URL="postgresql+psycopg://root:123456@localhost:5432/postgres"

@@ -1,4 +1,4 @@
-#DEMO：把清洗好的数据插入向量化数据库
+#DEMO：把清洗好的数据插入向量化数据库，test方法，没有父子块，就是全量插入
 import json
 import os
 from pathlib import Path
@@ -7,7 +7,7 @@ from langchain_openai import OpenAIEmbeddings
 #引入向量数据库操作包
 from langchain_postgres import PGVector
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 if __name__ == '__main__':
     # 1，加载环境变量(解析出本文件路径，然后获取决定路径，往上进一级,拼贴.env获取到env文件)

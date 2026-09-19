@@ -1,12 +1,14 @@
 #批量清洗真实数据的脚本
+
 #把拉取好的原始数据，一个个遍历，清洗，然后追加到新文件/cleaned/whole.json里面，里面是{"text":"xxxxx"}这样的
 import json
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 TARGET_PATH = ROOT / "data" / "cleaned" / "full.jsonl"
 SOURCE_PATH = ROOT / "data" / "raw" / "pages.jsonl"
+BLOCK_PATH = ROOT / "data" / "garbage" / "garbage_qid.txt"
 
 
 # 方法：传入原始内容，返回清洗后的内容
@@ -64,7 +66,14 @@ def clean_wikitext(raw: str) -> str:
 
     return raw.strip()
 
+
 if __name__ == '__main__':
+    #放垃圾数据
+    block_qids=set([])
+    #0，存入垃圾数据id
+    with open(BLOCK_PATH,"r",encoding="utf-8") as f:
+        for line in f:
+            block_qids.add(line.strip())
     #1，循环遍历，先拿到pages.jsonl里边的一个字典
     #1.1开文件,先开写入文件，
 
@@ -76,13 +85,16 @@ if __name__ == '__main__':
 
                 #line是字符串，要先解析成字典
                 jsonLine = json.loads(line)
-
+                #1.3去除垃圾数据
+                qid = jsonLine['qid']
+                if block_qids and qid in block_qids:
+                    continue
                 jsonNew={
                     "text":clean_wikitext(jsonLine['wikitext']),
                     "disease":jsonLine['title'],
                     "revision":jsonLine['revision'],
-                    "id":jsonLine['qid']
+                    "id": qid
                 }
-                #1.3把json写到jsons里边去
+                #1.4把json写到jsons里边去
                 #jsonNew是字典，转成字符串，注意要禁止ascii，不然中文会出问题
                 f1.write(json.dumps(jsonNew,ensure_ascii=False)+"\n")
