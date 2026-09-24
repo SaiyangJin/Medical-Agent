@@ -3,73 +3,33 @@
 #导入json字符串转化对象包
 import json
 #导入环境变量包
-import os
-from dotenv import load_dotenv
 #导入路径操作类
 from pathlib import Path
-#引入向量数据库操作包
-from langchain_postgres import PGVector
 from langchain_core.documents import Document
-#导入向量模型类
-from langchain_openai import OpenAIEmbeddings
+from sqlalchemy import MetaData, create_engine, Table, Column, Text
 #导入sql操作类
-from sqlalchemy import insert, Table, MetaData,create_engine,select
-
+from sqlalchemy import insert, Table, MetaData
+from src.parent_child_chunk.init_model import engine, pg_vector
+metadata = MetaData()
 #当前的根路径
 ROOT = Path(__file__).resolve().parents[2]
 #父块路径
 PARENT_PATH = ROOT / 'data' / 'chunk' / 'parent.jsonl'
 #字块路径
 CHILD_PATH = ROOT / 'data' / 'chunk' / 'child.jsonl'
-#操作表需要的定义容器
-meta_data = MetaData()
-#链接引擎
-DATA_BASE_URL = "postgresql+psycopg://root:123456@localhost:5432/postgres"
-engine = create_engine(DATA_BASE_URL)
-
-#加载环境变量
-load_dotenv(ROOT / '.env')
-#创建向量化模型
-embeddingModel = OpenAIEmbeddings(base_url="https://ws-8v7hg43jappdrllz.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-                                  model="qwen3.7-text-embedding",
-                                  api_key=os.environ.get("DASHSCOPE_API_KEY")
-                                  ,check_embedding_ctx_length=False
-                                  ,chunk_size=20)#单次请求最多20次
-#制造向量数据库操作对象
-pg_vector = PGVector(embeddingModel,
-                     connection=DATA_BASE_URL,
-                     collection_name="disease-child-chuck",
-                     use_jsonb=True,
-                     # pre_delete_collection=True #插入之前先删表的元素（开发阶段）
-                     )
-#打开文件开始构建父Chunk
-
-
-
 #定义表对象
-disease_parent_chuck_table = Table("disease_parent_chuck", meta_data, autoload_with=engine)
-
-#这个函数用来测试从问题检索到字块再检索到父块的过程
-def find(question:str,k=5):
-    #1，根据问题查找子块
-    search_res = pg_vector.similarity_search(question, k)
-    #2，字块解析出父id，放入set
-    parent_ids=set()
-    for search_re in search_res:
-        #2.1取到父id
-        parent_id = search_re.metadata['parent_id']
-        parent_ids.add(parent_id)
-    #3，sql查询父块，注意加mapping才能形成字典模式,才能按名字去取
-    with engine.begin() as conn:
-        execute_res = conn.execute(
-            select(disease_parent_chuck_table).where(disease_parent_chuck_table.c.id.in_(parent_ids))).mappings()
-    #4，解析结果
-    return execute_res
-
-
-
-
+# disease_parent_chuck_table = Table("disease_parent_chuck", MetaData(), autoload_with=engine)
+disease_parent_chuck_table = Table("disease_parent_chuck"  # 表名
+                                   , metadata  # 装载到哪个表定义容器
+                                   # 列定义：名字，类型，约束
+                                   , Column("id", Text, primary_key=True)
+                                   , Column("disease", Text,nullable=False)
+                                   , Column("title", Text,nullable=False)
+                                   , Column("text", Text,nullable=False)
+                                   , Column("revision", Text,nullable=False))
 if __name__ == '__main__':
+    metadata.drop_all(engine)
+    metadata.create_all(engine)
     #1,删除旧数据
     with engine.begin() as connection:
         connection.execute(disease_parent_chuck_table.delete())

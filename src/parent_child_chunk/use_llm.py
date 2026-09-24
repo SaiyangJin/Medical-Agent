@@ -1,21 +1,18 @@
 #用来测试模型的调用
 
-import os
-from pathlib import Path
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
 #导入自定义检索模块
-from src.parent_child_chunk.insert_parent_child_ import find
+from src.parent_child_chunk.content_retrieve import retrieve_by_embedding,retrieve_by_keyword
 #自定义提示词模版类，拼贴提示词
 from langchain_core.prompts import ChatPromptTemplate
 import json
-#加载环境变量(解析出本文件路径，然后获取决定路径，往上进一级,拼贴.env获取到env文件)
-load_dotenv(Path(__file__).resolve().parents[2] / '.env')
+
+from src.parent_child_chunk.init_model import qwenModel
+
+
 #已经进入到os.env里面了,可以直接拿
 
 #导入ChatOpenAi类，创建大模型对象
-qwenModel = ChatOpenAI(base_url="https://ws-8v7hg43jappdrllz.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-                       model="qwen3.8-max", api_key=os.environ.get("DASHSCOPE_API_KEY"))
+
 
 #方法：输出原始(标题-qid)的元组
 def dirty_data_clean():
@@ -26,8 +23,17 @@ def dirty_data_clean():
 
 #方法：使用模型
 def use_model(question:str):
-
-    text_list = find(question, 1)
+    embedding_res = retrieve_by_embedding(question, 5).all()
+    keyword_res = retrieve_by_keyword(question).all()
+    print("本次向量检索的资料是：", embedding_res)
+    print("本次关键字检索的资料是：", keyword_res)
+    #0,检索去重
+    duplicate_id=set()
+    for embedding_re in embedding_res:
+        duplicate_id.add(embedding_re["id"])
+    # keyword_res=filter(lambda  keyword_re:keyword_re["id"] not in duplicate_id,keyword_res)
+    #0.1列表推导式去重，性能更加
+    keyword_res=[keyword for keyword in keyword_res if keyword["id"] not in duplicate_id]
     #1，定义系统提示词
     SYSTEM_PROMPT = "你是一个医疗咨询助手，你要根据我提供给你的已有的资料回答问题，不要根据自己的记忆回答，如果没有相关资料，回答不知道"
     #2,模板类拼贴,from_message就是从一系列的结构化消息来初始化这个模板类
@@ -37,17 +43,16 @@ def use_model(question:str):
     #4.1,调用对象的invoke函数，获取到资料结果集
     #4.2,拼贴资料语句
     info=""
-    for text in text_list:
-        #拼贴带换行，结构化的资料语句
+    list_all = embedding_res + keyword_res
+    print("去重后的资料为：", list_all)
+    for text in list_all:
+        #拼  贴带换行，结构化的资料语句
         info+=f"\n\n【{text['disease']}-{text['title']}】{text['text']}\n\n"
-    #5,传递invoke
-    print(
-        info
-    )
+    #5,传  递invoke
     res = chain.invoke({"info": info, "question": question})
     print(res)
 
 if __name__=='__main__':
-    use_model("腦血管事故")
+    use_model("糖尿病是什么")
 
 
