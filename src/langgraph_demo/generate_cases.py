@@ -21,11 +21,11 @@ def process_full_jsonl(input_path: Path, output_path: Path):
             # 先递增计数器，再判断是否等于3
             count += 1
 
-            if count == 8:
+            if count == 1:
                 try:
                     data = json.loads(line)
                     disease = data.get("disease", "").strip()
-
+                    print(disease)
                     # 跳过疾病名为空的脏数据
                     if not disease:
                         print(f"[SKIP] 第 {processed + 1} 条目标数据 disease 为空，已跳过")

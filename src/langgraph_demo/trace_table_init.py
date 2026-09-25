@@ -19,7 +19,7 @@ trace_table = Table("trace", meta_data,
               Column("cost_time", Float, nullable=False),
               Column("is_deleted", Boolean, nullable=False))
 
-request_table = Table("llm_request", meta_data,
+request_table = Table("llm_test_judge_request", meta_data,
               Column("id", BigInteger, primary_key=True),
               Column("question", Text, nullable=False),
               Column("passed", Boolean, nullable=False),
@@ -27,11 +27,15 @@ request_table = Table("llm_request", meta_data,
               Column("trace_id", Text, nullable=False),
               Column("run_id", Text, nullable=False),
               Column("fail_reason", Text, nullable=True),
-              Column("create_time", TIMESTAMP, nullable=False,default=datetime.datetime.now()),
+              Column("create_time", DateTime, nullable=False),
+              Column("end_time", DateTime, nullable=False,default=datetime.datetime.now()),
+              Column("cost_time", Float, nullable=False),
               Column("is_deleted", Boolean, nullable=False,default=False))
+
+
 if __name__ == '__main__':
     #定义表
 
     #创建表
-    # meta_data.drop_all(engine)
+    meta_data.drop_all(engine)
     meta_data.create_all(engine)

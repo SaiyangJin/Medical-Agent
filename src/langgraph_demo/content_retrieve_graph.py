@@ -1,12 +1,10 @@
 import datetime
-import json
+
 import re
-import time
+
 import traceback
-import uuid
-from pathlib import Path
-from sqlalchemy.dialects.mysql import insert
-from src.parent_child_chunk.init_model import engine
+
+
 from src.langgraph_demo.langgraph_demo_graph_constant import (
     NORMAL_CITATION, ERROR_CITATION, NO_CITATION,
     ANSWER_STATUS_NORMAL, ANSWER_STATUS_REFUSE,
@@ -22,8 +20,7 @@ from langgraph.graph import StateGraph,START,END
 from src.parent_child_chunk.init_model import qwenModel
 from src.langgraph_demo.trace_table_init import request_table, trace_table
 
-ROOT = Path(__file__).resolve().parents[2]
-CASES_PATH=ROOT/"data"/"test"/"cases.jsonl"
+
 
 certainty_replace_list=[
     ("您确诊为","您的情况可能显示"),
@@ -147,17 +144,28 @@ def send_to_llm(state:State):
     1,身份介绍：你是一个医疗咨询助手，你要根据我提供给你的已有的资料回答问题，
     不要根据自己的记忆回答，如果没有相关资料，回答不知道
     
-    2,在回答里面在对应的内容后面贴出我给你的资料的编号，不要生成不带资料编号的回答
+    2,在回答里面在对应的内容后面贴出我给你的资料的编号，但是如果资料确实对不上用户的问题，也没有相似的资料，那就可以生成不带引用的回答
     在回答的最后给出编号+资料的摘要，就像：
     [1]xxxxx
     [2]xxxxx
     一条一行即可
+    注意，必须是回答里面有资料引用，你才能在回答的最后给出编号+资料的摘要，如果回答没有资料引用，不要贴出摘要
+
     
     3,尽量不要生成"确诊为","你得了"这类的确定性词，比如说"确诊是"改成"可能是","你得了"改成"可能有"
     
     4,尽量使用您来称呼用户
     
-    5,如果只检测到相关疾病，不能精确对上用户问的疾病，需要提示用户"资料中没有检索到xxx病，以下是检索到的相似疾病"
+    5,如果只检测到相关疾病，不能精确对上用户问的疾病，但是有相关疾病，需要提示用户"资料中没有检索到xxx病，以下是检索到的相似疾病"
+    但是如果相似疾病也没有，那就可以可以生成不带资料引用的回答。
+    同第二条，如果回答没有资料引用，不要贴出摘要
+    
+    6,如果你觉得用户输入的根本不是什么医学问题，请拒绝回答
+    如果用户的问题疑似涉及了医疗领域，但是其他谓语一类的你也找不到相关资料，请拒绝回答。
+    如：
+    氟氯噻嗪片是怎么造出来的
+    如果资料没有提到
+    你要拒绝回答
     """
 
     #2,模板类拼贴,from_message就是从一系列的结构化消息来初始化这个模板类
@@ -242,101 +250,52 @@ def validate_reference_number_router(state:State):
     else:
         return NODE_POST_GUARDRAIL
 
-
+#TODO 没有任何用例触发过这个逻辑
 def refuse_answer_handler(state:State):
-    return {"answer": "我无法回答这个问题","answer_status":ANSWER_STATUS_REFUSE}
+    return {"answer": "没有符合你描述的情况的资料,本问题超出了我的能力范围,如有不适,请尽量线下就医"
+        ,"answer_status":ANSWER_STATUS_REFUSE}
+
+
+#整个建图流程：
+# 1，根据START创建图
+graph = StateGraph(State)
+#2，增加所有节点
+graph.add_node(NODE_RETRIEVE_KEYWORD,    node_wrapper(retrieve_by_keyword_node))
+graph.add_node(NODE_RETRIEVE_EMBEDDING,  node_wrapper(retrieve_by_embedding_node))
+graph.add_node(NODE_SEND_TO_LLM,         node_wrapper(send_to_llm))
+graph.add_node(NODE_SAFETY_CHECK,        node_wrapper(safety_check))
+graph.add_node(NODE_HANDLE_RETRIEVE_RES, node_wrapper(handle_retrieve_res))
+graph.add_node(NODE_VALIDATE_REFERENCE,  node_wrapper(validate_reference_number))
+graph.add_node(NODE_POST_GUARDRAIL,      node_wrapper(post_guardrail))
+graph.add_node(NODE_DANGER_HANDLER,      node_wrapper(danger_situation_handler))
+graph.add_node(NODE_REFUSE_ANSWER,       node_wrapper(refuse_answer_handler))
+#3，增加所有边
+#紧急情况检查优先
+graph.add_edge(START, NODE_SAFETY_CHECK)
+#如果安全检查有问题，到danger_situation_handler处理
+#如果安全检查没有问题，到retrieve_by_keyword_node和retrieve_by_embedding_node
+graph.add_conditional_edges(NODE_SAFETY_CHECK, safety_check_router)
+graph.add_edge(NODE_DANGER_HANDLER, NODE_POST_GUARDRAIL)
+#4，尾部连接
+graph.add_edge(NODE_RETRIEVE_KEYWORD,    NODE_HANDLE_RETRIEVE_RES)
+graph.add_edge(NODE_RETRIEVE_EMBEDDING,  NODE_HANDLE_RETRIEVE_RES)
+graph.add_edge(NODE_HANDLE_RETRIEVE_RES, NODE_SEND_TO_LLM)
+graph.add_edge(NODE_SEND_TO_LLM,         NODE_VALIDATE_REFERENCE)
+#如果资料编号有错误，send_to_llm，如果资料编号没有错误，到post_guardrail处理,如果没有引用编号，拒绝回答
+graph.add_conditional_edges(NODE_VALIDATE_REFERENCE, validate_reference_number_router)
+graph.add_edge(NODE_REFUSE_ANSWER, NODE_POST_GUARDRAIL)
+graph.add_edge(NODE_POST_GUARDRAIL, END)
+#5,编译
+graph=graph.compile()
 
 
 if __name__ == '__main__':
-    #整个建图流程就逝：start到两个检索，去重整合parentid，合并到一个findbyparentid，然后结束即可
-    # 1，根据START创建图
-    graph = StateGraph(State)
-    #2，增加所有节点
-    graph.add_node(NODE_RETRIEVE_KEYWORD,    node_wrapper(retrieve_by_keyword_node))
-    graph.add_node(NODE_RETRIEVE_EMBEDDING,  node_wrapper(retrieve_by_embedding_node))
-    graph.add_node(NODE_SEND_TO_LLM,         node_wrapper(send_to_llm))
-    graph.add_node(NODE_SAFETY_CHECK,        node_wrapper(safety_check))
-    graph.add_node(NODE_HANDLE_RETRIEVE_RES, node_wrapper(handle_retrieve_res))
-    graph.add_node(NODE_VALIDATE_REFERENCE,  node_wrapper(validate_reference_number))
-    graph.add_node(NODE_POST_GUARDRAIL,      node_wrapper(post_guardrail))
-    graph.add_node(NODE_DANGER_HANDLER,      node_wrapper(danger_situation_handler))
-    graph.add_node(NODE_REFUSE_ANSWER,       node_wrapper(refuse_answer_handler))
-    #3，增加所有边
-    #紧急情况检查优先
-    graph.add_edge(START, NODE_SAFETY_CHECK)
-    #如果安全检查有问题，到danger_situation_handler处理
-    #如果安全检查没有问题，到retrieve_by_keyword_node和retrieve_by_embedding_node
-    graph.add_conditional_edges(NODE_SAFETY_CHECK, safety_check_router)
-    graph.add_edge(NODE_DANGER_HANDLER, NODE_POST_GUARDRAIL)
-    #4，尾部连接
-    graph.add_edge(NODE_RETRIEVE_KEYWORD,    NODE_HANDLE_RETRIEVE_RES)
-    graph.add_edge(NODE_RETRIEVE_EMBEDDING,  NODE_HANDLE_RETRIEVE_RES)
-    graph.add_edge(NODE_HANDLE_RETRIEVE_RES, NODE_SEND_TO_LLM)
-    graph.add_edge(NODE_SEND_TO_LLM,         NODE_VALIDATE_REFERENCE)
-    #如果资料编号有错误，send_to_llm，如果资料编号没有错误，到post_guardrail处理,如果没有引用编号，拒绝回答
-    graph.add_conditional_edges(NODE_VALIDATE_REFERENCE, validate_reference_number_router)
-    graph.add_edge(NODE_REFUSE_ANSWER, NODE_POST_GUARDRAIL)
-    graph.add_edge(NODE_POST_GUARDRAIL, END)
-    #5,编译
-    graph=graph.compile()
-    #6，测试
-    #6.1先生成uuid
-    trace_id = str(uuid.uuid4())
-    #6.2问问题(⚠这里面传的参数会被维护在state里边)
 
-    ###测试：跑一波测试用例，检测最终生成的链路和引用例，和期待的链路的引用是否一致，根据cases.jsonl
-    run_id=uuid.uuid4()
-    with open(CASES_PATH,"r",encoding="UTF-8") as f:
-        for line in f:
-            if not line: continue
-            bad_case_reason=""
-            line_dict=json.loads(line)
-            question = line_dict["question"]
-            expect_answer_status = line_dict["expect"]
-            expect_disease = line_dict.get("expect_disease")
-            #打印出引用的info和status，和期待的status(expect)和info
-            try:
-                #调用llm获取到最终的结果
-                state=graph.invoke({"question": question, "trace_id": str(uuid.uuid4())})
-                #先判断status是否一致，不一致直接标记bad-case。
-                if state["answer_status"] != expect_answer_status:
-                    bad_case_reason += f"实际的回答状态{state['answer_status']}和期待的回答状态{expect_answer_status}不一致\n"
-                #然后如果status==“normal”，需要判断期待病症在不在info里边，如果不在，标记bad-case
-                if expect_disease is not None and state["answer_status"] == "normal" and expect_disease not in set([i["disease"] for i in state.get("embedding_res", [])+state.get("keyword_res", [])]):
-                    bad_case_reason += f"期待的病症{expect_disease}不在查到的资料里边\n"
-            except Exception as e:
-                print(f"请求错误!traceid为: {trace_id} ,问题:{question}")
-                with engine.begin() as conn:
-                    conn.execute(insert(request_table),{
-                        "question":question,
-                        "passed": False,#系统错误
-                        "trac e_id":trace_id,#一次请求一个trace_id
-                        "run_id": run_id,#这批的id，用于统计通过率
-                        "fail_reason": "系统错误,请查看详细执行链路",
-                        #嗯，如果是系统错误，那就是"系统错误"，如果是bad_case那就输入bad_case_reason
-                        "is_system_error": True
-                    })
-                continue
-            finally:
-                with engine.begin() as conn:
-                    conn.execute(insert(trace_table),trace_list)
-                    #注意清理，否则会越来越多。
-                    trace_list.clear()
-            # 现在，要么过，要么就是bad——case
-            with engine.begin() as conn:
-                conn.execute(insert(request_table),{
-                    "question":state["question"],
-                    "passed": bad_case_reason=="",#不是bad_case才能通过
-                    "trace_id":state["trace_id"],#一次请求一个trace_id
-                    "run_id": run_id,#这批的id，用于统计通过率
-                    "fail_reason":  bad_case_reason,
-                    #嗯，如果是系统错误，那就是"系统错误"，如果是bad_case那就输入bad_case_reason
-                    "is_system_error": False
-                })
 
+    a=0
     # # 正常问题
     # question = "菊池病是什么"
-    # # 急症问题
+    # # # 急症问题
     # danger_question = "我大出血了"
     # try:
     #     graph.invoke({"question": question, "trace_id": trace_id})
