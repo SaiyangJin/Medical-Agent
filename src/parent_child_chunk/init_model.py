@@ -36,5 +36,5 @@ pg_vector = PGVector(embeddingModel,
                      )
 #创建大语言模型
 qwenModel = ChatOpenAI(base_url="https://ws-8v7hg43jappdrllz.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-                       model="qwen3.8-flash", api_key=os.environ.get("DASHSCOPE_API_KEY"))
+                       model="qwen3.6-flash", api_key=os.environ.get("DASHSCOPE_API_KEY"))
                        # model="qwen3.5-flash", api_key=os.environ.get("DASHSCOPE_API_KEY"))

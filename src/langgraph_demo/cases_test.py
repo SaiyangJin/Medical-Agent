@@ -10,6 +10,10 @@ import uuid
 from src.langgraph_demo.content_retrieve_graph import graph, trace_list
 ROOT = Path(__file__).resolve().parents[2]
 CASES_PATH=ROOT/"data"/"test"/"cases.jsonl"
+CASES_1_PATH=ROOT/"data"/"test"/"cases_level1.jsonl"
+CASES_2_PATH=ROOT/"data"/"test"/"cases_level2.jsonl"
+CASES_3_PATH=ROOT/"data"/"test"/"cases_level3.jsonl"
+CASES_4_PATH=ROOT/"data"/"test"/"cases_level4.jsonl"
 # CASES_PATH=ROOT/"data"/"test"/"make_up_disease.jsonl"
 def cases_test(cases_path:Path):
     #1先生成uuid
@@ -76,3 +80,4 @@ def cases_test(cases_path:Path):
                 })
 if __name__ == '__main__':
     cases_test(CASES_PATH)
+    # cases_test(CASES_4_PATH)

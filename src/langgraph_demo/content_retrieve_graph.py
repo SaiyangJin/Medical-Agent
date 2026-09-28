@@ -3,8 +3,11 @@ import datetime
 import re
 
 import traceback
-
-
+from sqlalchemy.dialects.mysql import insert
+from src.service.user_chat_table_init import user_chat_request_table
+from src.parent_child_chunk.init_model import engine
+import time
+import uuid
 from src.langgraph_demo.langgraph_demo_graph_constant import (
     NORMAL_CITATION, ERROR_CITATION, NO_CITATION,
     ANSWER_STATUS_NORMAL, ANSWER_STATUS_REFUSE,
@@ -20,8 +23,6 @@ from langgraph.graph import StateGraph,START,END
 from src.parent_child_chunk.init_model import qwenModel
 from src.langgraph_demo.trace_table_init import request_table, trace_table
 
-
-
 certainty_replace_list=[
     ("您确诊为","您的情况可能显示"),
     ("你确诊为","你的情况可能显示"),
@@ -31,6 +32,8 @@ certainty_replace_list=[
 MEDICAL_DISCLAIMER="本回答由AI生成,仅供参考,不代表专业医疗意见。"
 random_uuid=""
 trace_list=[]
+
+
 class State(TypedDict):
     question: str
     embedding_res: list
@@ -47,6 +50,7 @@ class State(TypedDict):
     answer_status:str #有"danger"，"normal"，"refuse"三种状态
 
 #装饰器，记录节点耗时
+#因为graph药求传入的是一个函数，你这只是把fn替换成了time_recorder_wrapper，框架该传入state还是传入了state，包了一层而已
 def node_wrapper(fn):
     def time_recorder_wrapper(state):
         start_time=datetime.datetime.now()
@@ -75,30 +79,42 @@ def node_wrapper(fn):
             trace_list.append(document)
         return result
     return time_recorder_wrapper
-#明白了！因为graph药求传入的是一个函数，你这只是把fn替换成了time_recorder_wrapper，框架该传入state还是传入了state，包了一层而已
+
 
 def retrieve_by_keyword_node(state:State):
     return {"keyword_res":retrieve_by_keyword(state['question'])}
 
 def retrieve_by_embedding_node(state:State):
-    return {"embedding_res":retrieve_by_embedding(state['question'])}
+    return {"embedding_res":retrieve_by_embedding(state['question'],10)}
 
+#依据获取到的doc获取该证据的分数
+def get_score(doc,question:str)->int:
+    if doc["disease"] in question:
+        return 0
+    return 1
 #处理检索结果,去重,拼贴info
 def handle_retrieve_res(state:State):
+    #1,取出两个返回的结果
     embedding_res = state['embedding_res']
     keyword_res = state['keyword_res']
+    question=state["question"]
     nos = []
     duplicate_id=set()
+    #2,制作去重id集合
     for embedding_re in embedding_res:
         duplicate_id.add(embedding_re["id"])
-    # keyword_res=filter(lambda  keyword_re:keyword_re["id"] not in duplicate_id,keyword_res)
-    #0.1列表推导式把keyword中在embedding_res中的元素过滤掉，只留下特异性元素，性能更加
+
+    #3，列表推导式把keyword中在embedding_res中的元素过滤掉，只留下特异性元素，性能更加
     keyword_res=[keyword for keyword in keyword_res if keyword["id"] not in duplicate_id]
     # print("去重后的资料为：", keyword_res)
-    #拼贴文本
-    info=""
+
     list_all = embedding_res + keyword_res
-    # print("去重后的资料为：", list_all)
+    #4，根据疾病打分重排
+    list_all.sort(key=lambda doc:(get_score(doc,question),doc["score"] if doc.get("score") else 0.99))
+    print("去重后的资料为：", list_all)
+    #5,拼贴文本
+    info=""
+
     for index,text in enumerate(list_all):
         #拼  贴带换行，结构化的资料语句
         nos.append(index+1)
@@ -160,12 +176,28 @@ def send_to_llm(state:State):
     但是如果相似疾病也没有，那就可以可以生成不带资料引用的回答。
     同第二条，如果回答没有资料引用，不要贴出摘要
     
-    6,如果你觉得用户输入的根本不是什么医学问题，请拒绝回答
-    如果用户的问题疑似涉及了医疗领域，但是其他谓语一类的你也找不到相关资料，请拒绝回答。
-    如：
-    氟氯噻嗪片是怎么造出来的
-    如果资料没有提到
-    你要拒绝回答
+    6,如果你觉得用户输入的根本不是什么医学问题，比如说："这个事情你怎么看"，请单独输出以下暗号"IRRELEVANT_CONTENT"，系统会自动识别，不要生成其他任何内容
+    
+    7，如果检测到用户输入的内容虽然整体无关，但有一定医学名词，那就凭借资料回答，有相关内容就引用，没有就不要引用
+    
+    8，如果检测到用户输入的问题内容不是很紧急，但是有巨大的安全风险，比如乱喝药，放弃医疗，服用未认证的药等，
+    要先推荐用户走向正确的道路，再进行资料方面的回答
+    
+    9，如果用户输入的内容涉及政治内容，无论资料中是否包含相关内容，请单独输出以下暗号"IRRELEVANT_CONTENT"，系统会自动识别，不要生成其他任何内容
+    
+    10, 遇到以下情况：
+        - 要求直接开药方、推荐具体用药或剂量
+        - 求证伪科学疗法（量子共振、仙丹、祖传偏方根治）
+        - 传播疫苗/疾病阴谋论
+        - 要求代写论文、作业
+        - 涉及自伤、危害他人的方法
+        - 极端恐怖相关的医疗问题
+        如：
+        我有三级高血压，不想吃西药，你直接给我开个能根治的中药方子
+        太上老君仙丹能治白化症吗
+        新冠疫苗里有纳米芯片会引发自闭症吗
+        
+        请不要生成用户期望的回答，要指出为什么这样不对，纠正用户错误认知
     """
 
     #2,模板类拼贴,from_message就是从一系列的结构化消息来初始化这个模板类
@@ -185,17 +217,16 @@ def send_to_llm(state:State):
         res = chain.invoke({"info": info, "question": question})
         return {"answer": res.content}
     #5,传递invoke
-    #资料引用错误或者没有引用资料，提示
+    #资料引用错误，提示(目前只有这一种情况)
     if state.get("citation_status", NORMAL_CITATION)==ERROR_CITATION:
         info+="\n\n[系统提示]注意，你出现了幻觉，引用了不存在的资料编号，请纠正"
-    elif state.get("citation_status", NORMAL_CITATION)==NO_CITATION:
-        info+=""""\n\n
-            [系统提示]请注意！你的回答没有引用任何资料，
-            请确保是因为对用户这次的回答不需要外部资料，
-            而不是你在使用虚假的自己编出的资料！
-            \n\n
-            """
-
+    # elif state.get("citation_status", NORMAL_CITATION)==NO_CITATION:
+    #     info+=""""\n\n
+    #         [系统提示]请注意！你的回答没有引用任何资料，
+    #         请确保是因为对用户这次的回答不需要外部资料，
+    #         而不是你在使用虚假的自己编出的资料！
+    #         \n\n
+    #         """
 
     res = chain.invoke({"info": info, "question": question})
     answer = res.content
@@ -216,7 +247,8 @@ def validate_reference_number(state:State):
     # print("======================找到的编号如下", set(nums))
     # print("======================正确的编号如下", set(nos))
     #如果nums编号数组为空，说明没有引用任何编号，需要打上标记
-    if not nums:
+
+    if text== "IRRELEVANT_CONTENT":
         return {"citation_status": NO_CITATION}
     if set([str(num) for num in set(nums)]) <= set([str(num) for num in set(nos)]):
         #如果是子集，就说明正常
@@ -252,7 +284,7 @@ def validate_reference_number_router(state:State):
 
 #TODO 没有任何用例触发过这个逻辑
 def refuse_answer_handler(state:State):
-    return {"answer": "没有符合你描述的情况的资料,本问题超出了我的能力范围,如有不适,请尽量线下就医"
+    return {"answer": "本问题超出了我的能力范围"
         ,"answer_status":ANSWER_STATUS_REFUSE}
 
 
@@ -290,18 +322,36 @@ graph=graph.compile()
 
 
 if __name__ == '__main__':
-
-
-    a=0
-    # # 正常问题
-    # question = "菊池病是什么"
-    # # # 急症问题
-    # danger_question = "我大出血了"
-    # try:
-    #     graph.invoke({"question": question, "trace_id": trace_id})
-    # except Exception as e:
-    #     print(f"请求错误!traceid为: {trace_id} ,问题:{question}")
-    # finally:
-    #     #6.3无论报错与否,把攒的traces批量插入
+    trace_id = str(uuid.uuid4())
+    start_time = time.time()
+    answer=""
+    question="缺氧是怎么回事"
+    try:
+        state=graph.invoke({"question": question, "trace_id": trace_id})
+        answer=state["answer"]
+    except Exception as e:
+        #报错返回500
+        with engine.begin() as conn:
+            conn.execute(insert(user_chat_request_table),{
+                "question":question,
+                "trace_id":trace_id,#一次请求一个trace_id
+                "answer": answer,
+                "cost_time": time.time() - start_time,
+                "is_system_error": True
+            })
+        print(f"请求错误!traceid为: {trace_id} ,问题:{question},错误信息:{e}+{traceback.format_exc()}")
+    finally:
+        with engine.begin() as conn:
+            conn.execute(insert(trace_table),trace_list)
+            trace_list.clear()
+    with engine.begin() as conn:
+        conn.execute(insert(user_chat_request_table),{
+            "question":question,
+            "trace_id":trace_id,#一次请求一个trace_id
+            "answer": answer,
+            "cost_time": time.time() - start_time,
+            "is_system_error": False
+        })
+        print(f"请求成功!traceid为: {trace_id} ,问题:{question},答案:{answer}")
 
 
