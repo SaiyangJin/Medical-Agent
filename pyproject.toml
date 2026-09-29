@@ -10,6 +10,7 @@ dependencies = [
     "langchain>=1.4.0",
     "langchain-openai>=1.6.2",
     "langchain-postgres>=0.0.18",
+    "neo4j>=6.3.1",
     "path>=17.1.1",
     "pytest>=9.1.1",
     "python-dotenv>=1.2.3",

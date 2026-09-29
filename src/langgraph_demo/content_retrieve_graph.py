@@ -1,12 +1,16 @@
 import datetime
-
+from sqlalchemy import select
+from src.parent_child_chunk.init_model import engine, pg_vector
+from src.parent_child_chunk.insert_parent_child_ import disease_parent_chuck_table
 import re
-
+import json
 import traceback
 from sqlalchemy.dialects.mysql import insert
 from src.service.user_chat_table_init import user_chat_request_table
 from src.parent_child_chunk.init_model import engine
+
 import time
+from src.data_graph.neo4j_init import neo4j_driver
 import uuid
 from src.langgraph_demo.langgraph_demo_graph_constant import (
     NORMAL_CITATION, ERROR_CITATION, NO_CITATION,
@@ -15,8 +19,10 @@ from src.langgraph_demo.langgraph_demo_graph_constant import (
     NODE_RETRIEVE_KEYWORD, NODE_RETRIEVE_EMBEDDING,
     NODE_HANDLE_RETRIEVE_RES, NODE_SEND_TO_LLM,
     NODE_VALIDATE_REFERENCE, NODE_POST_GUARDRAIL, NODE_REFUSE_ANSWER, ANSWER_STATUS_DANGER, danger_word_list,
+    NODE_RETRIEVE_GRAPH,
 )
-from src.parent_child_chunk.content_retrieve import retrieve_by_keyword,retrieve_by_embedding
+from src.parent_child_chunk.content_retrieve import retrieve_by_keyword, retrieve_by_embedding, \
+    get_doc_with_score_by_parent_id_list
 from langchain_core.prompts import ChatPromptTemplate
 from typing import TypedDict
 from langgraph.graph import StateGraph,START,END
@@ -33,11 +39,13 @@ MEDICAL_DISCLAIMER="本回答由AI生成,仅供参考,不代表专业医疗意�
 random_uuid=""
 trace_list=[]
 
+TABLE=["肌肉萎缩", "肌肉无力", "吞咽困难", "肌肉痉挛", "肌肉僵硬", "构音障碍", "步态异常", "精细运动障碍", "反射亢进", "肌肉颤动", "情绪失控", "咀嚼困难", "呼吸困难", "眼球运动障碍", "认知障碍", "疼痛", "抑郁", "睡眠障碍", "便秘", "流涎"]
 
 class State(TypedDict):
     question: str
     embedding_res: list
     keyword_res: list
+    graph_res: list
     finally_res: list #合并去重过滤之后的最终结果
     answer: str
     info: str
@@ -80,12 +88,54 @@ def node_wrapper(fn):
         return result
     return time_recorder_wrapper
 
-
+#第一条链路:关键词检索
 def retrieve_by_keyword_node(state:State):
     return {"keyword_res":retrieve_by_keyword(state['question'])}
 
+#第二条链路:向量检索
 def retrieve_by_embedding_node(state:State):
     return {"embedding_res":retrieve_by_embedding(state['question'],10)}
+
+#第三条链路:知识图谱检索
+def retrieve_by_knowledge_graph(state:State):
+    #0,先把Table構建出來
+    symptoms_table =[]
+    for record in neo4j_driver.execute_query(
+            "match (n:SYMPTOM) RETURN n").records:
+        symptoms_table.append(record["n"]["name"])
+    # 1,先通过llm提取出用户问题的症状
+    # 1.1编写提示词
+    SYSTEM_PROMPT = ("请在如下用户的问题中提取出症状:"+"\n"+state['question']+"\n"
+                     +"""
+    注意,提取的症状只能按照如下的表来提取,提取的症状需要在下面找到对应意思的词,输出找到的词,返回格式是:["症状1","症状2"]
+    输出纯文本即可，不要输出其他内容，系统会解析
+    列表如下:
+    """+','.join(symptoms_table))
+
+    res = qwenModel.invoke(SYSTEM_PROMPT)
+
+    print(f"提取的症状为:{res.content}")
+
+    symptoms_list = json.loads(res.content)
+
+
+    #2,通过neo4j图数据库检索到病名
+    neo4j_diseases_res = neo4j_driver.execute_query(
+        "match (n:DISEASE)-[p:HAS_SYMPTOM]->(m:SYMPTOM) where m.name in $symptoms_list return n",
+        symptoms_list=symptoms_list).records
+    disease_list=[]
+    for disease in neo4j_diseases_res:
+        disease_list.append(disease["n"]["name"])
+    #3,通过病名查询出父块资料的ids
+    with (engine.begin() as connect):
+        parent_id_list = connect.execute(select(disease_parent_chuck_table.c.id)
+                              .where(disease_parent_chuck_table.c.disease.in_(disease_list))
+                              ).scalars().all()
+    #4,有了parentids，调用方法，制作成doc-score表返回
+    doc_score_list = get_doc_with_score_by_parent_id_list(parent_id_list, state["question"])
+    print(f"知识图谱检索结果为:{doc_score_list}")
+    return {"graph_res": doc_score_list}
+
 
 #依据获取到的doc获取该证据的分数
 def get_score(doc,question:str)->int:
@@ -97,20 +147,28 @@ def handle_retrieve_res(state:State):
     #1,取出两个返回的结果
     embedding_res = state['embedding_res']
     keyword_res = state['keyword_res']
+    graph_res = state['graph_res']
     question=state["question"]
     nos = []
-    duplicate_id=set()
+    embedding_ids=set()
     #2,制作去重id集合
     for embedding_re in embedding_res:
-        duplicate_id.add(embedding_re["id"])
+        embedding_ids.add(embedding_re["id"])
 
+
+    #TODO这边还需要取一个最小的score
     #3，列表推导式把keyword中在embedding_res中的元素过滤掉，只留下特异性元素，性能更加
-    keyword_res=[keyword for keyword in keyword_res if keyword["id"] not in duplicate_id]
+    keyword_res=[keyword for keyword in keyword_res if keyword["id"] not in embedding_ids]
+    keyword_ids=[]
+    for keyword_re in keyword_res:
+        keyword_ids.append(keyword_re["id"])
+    graph_res=[graph for graph in graph_res if graph["id"] not in embedding_ids and graph["id"] not in keyword_ids]
+
     # print("去重后的资料为：", keyword_res)
 
-    list_all = embedding_res + keyword_res
+    list_all = embedding_res + keyword_res + graph_res
     #4，根据疾病打分重排
-    list_all.sort(key=lambda doc:(get_score(doc,question),doc["score"] if doc.get("score") else 0.99))
+    list_all.sort(key=lambda doc:(get_score(doc,question),doc["score"] if doc.get("score") else 0.999))
     print("去重后的资料为：", list_all)
     #5,拼贴文本
     info=""
@@ -143,7 +201,7 @@ def safety_check_router(state:State):
     if state.get("is_danger", False):
         return NODE_DANGER_HANDLER
     else:
-        return [NODE_RETRIEVE_KEYWORD, NODE_RETRIEVE_EMBEDDING]
+        return [NODE_RETRIEVE_KEYWORD, NODE_RETRIEVE_EMBEDDING, NODE_RETRIEVE_GRAPH]
 #安全检查出危险情况之后，调用的函数
 def danger_situation_handler(state:State):
     return {"answer": "您描述的情况是危险情况，需要紧急处理，请立即就医。","answer_status":ANSWER_STATUS_DANGER}
@@ -294,6 +352,7 @@ graph = StateGraph(State)
 #2，增加所有节点
 graph.add_node(NODE_RETRIEVE_KEYWORD,    node_wrapper(retrieve_by_keyword_node))
 graph.add_node(NODE_RETRIEVE_EMBEDDING,  node_wrapper(retrieve_by_embedding_node))
+graph.add_node(NODE_RETRIEVE_GRAPH,      node_wrapper(retrieve_by_knowledge_graph))
 graph.add_node(NODE_SEND_TO_LLM,         node_wrapper(send_to_llm))
 graph.add_node(NODE_SAFETY_CHECK,        node_wrapper(safety_check))
 graph.add_node(NODE_HANDLE_RETRIEVE_RES, node_wrapper(handle_retrieve_res))
@@ -311,6 +370,8 @@ graph.add_edge(NODE_DANGER_HANDLER, NODE_POST_GUARDRAIL)
 #4，尾部连接
 graph.add_edge(NODE_RETRIEVE_KEYWORD,    NODE_HANDLE_RETRIEVE_RES)
 graph.add_edge(NODE_RETRIEVE_EMBEDDING,  NODE_HANDLE_RETRIEVE_RES)
+graph.add_edge(NODE_RETRIEVE_GRAPH,      NODE_HANDLE_RETRIEVE_RES)
+
 graph.add_edge(NODE_HANDLE_RETRIEVE_RES, NODE_SEND_TO_LLM)
 graph.add_edge(NODE_SEND_TO_LLM,         NODE_VALIDATE_REFERENCE)
 #如果资料编号有错误，send_to_llm，如果资料编号没有错误，到post_guardrail处理,如果没有引用编号，拒绝回答
@@ -325,7 +386,7 @@ if __name__ == '__main__':
     trace_id = str(uuid.uuid4())
     start_time = time.time()
     answer=""
-    question="缺氧是怎么回事"
+    question="最近有点吞不进去东西，还有点无力，怎么回事，得什么病了"
     try:
         state=graph.invoke({"question": question, "trace_id": trace_id})
         answer=state["answer"]
@@ -353,5 +414,6 @@ if __name__ == '__main__':
             "is_system_error": False
         })
         print(f"请求成功!traceid为: {trace_id} ,问题:{question},答案:{answer}")
+
 
 

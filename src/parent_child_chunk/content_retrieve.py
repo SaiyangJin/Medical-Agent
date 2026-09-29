@@ -1,4 +1,5 @@
 import time
+from typing import Any
 
 from sqlalchemy.engine.result import MappingResult
 from sqlalchemy import select
@@ -76,17 +77,19 @@ def retrieve_by_keyword(question:str)-> list:
         index_in_chuck = e[0]
         #json.load是文件转json，json.loads是字符串转字典
         parent_id_list.append(child_chunk_metadata_res[index_in_chuck]["parent_id"])
-    # end_time = time.time()
-    # print("关键词检索耗时：", end_time - start_time, "秒")
 
-    #3，根据parent_id_list查询对应的子块向量得分（要最小的得分）
-    #这边k要设置很大哦，限制了返回几个字段
-    search_res_list = pg_vector.similarity_search_with_score(question,k=10000,filter={
-        "parent_id":{
-            "$in":parent_id_list
+    return get_doc_with_score_by_parent_id_list(parent_id_list, question)
+
+#通过parentids就能找到带问题距离的docs
+def get_doc_with_score_by_parent_id_list(parent_id_list: list[Any], question: str) -> list:
+    # 根据parent_id_list查询对应的子块向量得分（要最小的得分）
+    # 这边k要设置很大哦，限制了返回几个字段
+    search_res_list = pg_vector.similarity_search_with_score(question, k=10000, filter={
+        "parent_id": {
+            "$in": parent_id_list
         }
     })
-    #里面是元组，[Document[id,metadata,page-content],score]
+    # 里面是元组，[Document[id,metadata,page-content],score]
     """
         (Document(id='Q4198677-0-0',
     metadata={
@@ -98,17 +101,20 @@ def retrieve_by_keyword(question:str)-> list:
     page_content='糖尿病并发症-介绍: xxx'),
     0.41879749298095703),
     """
-    #4,解析search_res,制作为一个dict，key是parent_id，value是最小的score（因为要做最小值判断，所以不直接用列表表达式）
+    # 4,解析search_res,制作为一个dict，key是parent_id，value是最小的score（因为要做最小值判断，所以不直接用列表表达式）
     parent_id_score_dict = {}
-    #4.1循环遍历search_res（元组遍历更方便）
-    for search_res,score in search_res_list:
-        #4.2拿到metadata的parent_id，
-        parent_id=dict(search_res)["metadata"]["parent_id"]
-        #仅当parent不存在，或者原本的score比这个score大的时候，赋值score
-        parent_id_score_dict[parent_id]=score if parent_id_score_dict.get(parent_id)==None else min(score,parent_id_score_dict.get(parent_id))
-    #print(parent_id_score_dict)=={'Q4198677-0': 0.41879749298095703, 'Q12202-5': 0.6046279966831207, 'Q2711291-4': 0.6915164177705987}
-    #4.2调用相应函数组装带score的父块数据
+    # 4.1循环遍历search_res（元组遍历更方便）
+    for search_res, score in search_res_list:
+        # 4.2拿到metadata的parent_id，
+        parent_id = dict(search_res)["metadata"]["parent_id"]
+        # 仅当parent不存在，或者原本的score比这个score大的时候，赋值score
+        parent_id_score_dict[parent_id] = score if parent_id_score_dict.get(parent_id) is None else min(score,
+                                                                                                        parent_id_score_dict.get(
+                                                                                                            parent_id))
+    # print(parent_id_score_dict)=={'Q4198677-0': 0.41879749298095703, 'Q12202-5': 0.6046279966831207, 'Q2711291-4': 0.6915164177705987}
+    # 4.2调用相应函数组装带score的父块数据
     return find_parent_chuck_by_parent_id_scores(parent_id_score_dict)
+
 
 #通过ParentIds和score获取到数据库查询对应的父块
 def find_parent_chuck_by_parent_id_scores(best_score_parent_ids:dict)->list:
