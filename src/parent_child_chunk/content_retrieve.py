@@ -1,15 +1,22 @@
 import time
 from typing import Any
 
-from sqlalchemy.engine.result import MappingResult
-from sqlalchemy import select
-from src.parent_child_chunk.init_model import engine, pg_vector
-from src.parent_child_chunk.insert_parent_child_ import disease_parent_chuck_table
 import jieba
 import rank_bm25
 from sqlalchemy import Table, MetaData
+import datetime
+from sqlalchemy import select
 
 
+from src.parent_child_chunk.insert_parent_child_ import disease_parent_chuck_table
+
+import json
+
+from src.parent_child_chunk.init_model import engine, pg_vector
+
+import time
+from src.data_graph.neo4j_init import neo4j_driver
+from src.parent_child_chunk.init_model import qwenModel
 
 #这个函数用来测试从问题检索到字块再检索到父块的过程
 #k的含义是，根据问题，返回k个最相关的子块
@@ -80,8 +87,75 @@ def retrieve_by_keyword(question:str)-> list:
 
     return get_doc_with_score_by_parent_id_list(parent_id_list, question)
 
-#通过parentids就能找到带问题距离的docs
+def retrieve_by_knowledge_graph(question:str)->list:
+    #0,先把Table構建出來
+    symptoms_table =[]
+    for record in neo4j_driver.execute_query(
+            "match (n:SYMPTOM) RETURN n").records:
+        symptoms_table.append(record["n"]["name"])
+    #0.5如果没病，抽取不出来，直接返回none
+    if not symptoms_table:
+        return []
+    # 1,先通过llm提取出用户问题的症状
+    # 1.1编写提示词
+    SYSTEM_PROMPT = ("请在如下用户的问题中提取出症状:" +"\n" + question + "\n"
+                     +"""
+    注意,提取的症状只能按照如下的表来提取,提取的症状需要在下面找到对应意思的词,输出找到的词,返回格式是:["症状1","症状2"]
+    输出纯文本即可，不要输出其他内容，系统会解析
+    列表如下:
+    """ +','.join(symptoms_table))
+
+    res = qwenModel.invoke(SYSTEM_PROMPT)
+
+    # print(f"提取的症状为:{res.content}")
+
+    symptoms_list = json.loads(res.content)
+
+    #1.2如果提取不出症状，直接返回none
+    if not symptoms_list:
+        return []
+
+    #2,通过neo4j图数据库检索到病名
+    neo4j_diseases_res = neo4j_driver.execute_query(
+        "match (n:DISEASE)-[p:HAS_SYMPTOM]->(m:SYMPTOM) where m.name in $symptoms_list return n",
+        symptoms_list=symptoms_list).records
+    disease_list=[]
+    for disease in neo4j_diseases_res:
+        disease_list.append(disease["n"]["name"])
+    #3,如果数据库内没有匹配的病，那就返回none
+    if not disease_list:
+        return []
+    #3,通过病名查询出父块资料的ids
+    with (engine.begin() as connect):
+        parent_id_list = connect.execute(select(disease_parent_chuck_table.c.id)
+                                         .where(disease_parent_chuck_table.c.disease.in_(disease_list))
+                                         ).scalars().all()
+
+    #4,有了parent_ids，调用方法，制作成每个病两个引用的doc-score表返回
+    res_doc_list=[]#放最终结果
+    res_doc_dict={}#key是病，val是出现了几次
+    #{"中风1":0.434，“中风2”:0.32}
+    lists = get_doc_with_score_by_parent_id_list(parent_id_list, question)
+    lists.sort(key=lambda d: d["score"])
+    for doc in lists:
+        #现在我每个disease就取两个score最小的，如何实现这个api？难搞
+        #拿到这个病用几次了
+        used = res_doc_dict.get(doc["disease"], 0)
+        #如果用了两次
+        if used>=1:
+            #跳过
+            continue
+        res_doc_list.append(doc)
+        res_doc_dict[doc["disease"]]=used+1
+        # print(f"知识图谱检索结果为:{doc_score_list}")
+    return res_doc_list
+
+
+#通过parent_ids就能找到带问题距离的docs
 def get_doc_with_score_by_parent_id_list(parent_id_list: list[Any], question: str) -> list:
+    #没有父块资料，返回none
+    if not parent_id_list:
+        return []
     # 根据parent_id_list查询对应的子块向量得分（要最小的得分）
     # 这边k要设置很大哦，限制了返回几个字段
     search_res_list = pg_vector.similarity_search_with_score(question, k=10000, filter={

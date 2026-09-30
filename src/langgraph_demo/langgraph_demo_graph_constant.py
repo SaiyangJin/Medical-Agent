@@ -1,4 +1,10 @@
+import json
+from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[2]
+TARGET_PATH = ROOT / "data" / "cleaned" / "full.jsonl"
+SOURCE_PATH = ROOT / "data" / "raw" / "pages.jsonl"
+BLOCK_PATH = ROOT / "data" / "garbage" / "garbage_qid.txt"
 
 NO_CITATION = "NO_CITATION"
 ERROR_CITATION = "ERROR_CITATION"
@@ -15,12 +21,15 @@ NODE_SAFETY_CHECK = "safety_check"
 NODE_DANGER_HANDLER = "danger_situation_handler"
 NODE_RETRIEVE_KEYWORD = "retrieve_by_keyword_node"
 NODE_RETRIEVE_EMBEDDING = "retrieve_by_embedding_node"
-NODE_RETRIEVE_GRAPH = "retrieve_by_graph_node"
+NODE_RETRIEVE_GRAPH = "retrieve_by_knowledge_graph_node"
 NODE_HANDLE_RETRIEVE_RES = "handle_retrieve_res"
 NODE_SEND_TO_LLM = "send_to_llm"
 NODE_VALIDATE_REFERENCE = "validate_reference_number"
 NODE_POST_GUARDRAIL = "post_guardrail"
 NODE_REFUSE_ANSWER = "refuse_answer_handler"
+NODE_FAST_ANSWER_HANDLER = "fast_answer_handler"
+NODE_FAST_ANSWER_JUDGER = "fast_answer_judger"
+
 
 danger_word_list= [
     # === 1. 严重出血（口语化表达） ===
@@ -80,3 +89,11 @@ danger_word_list= [
     "肚子疼得打滚", "剧烈腹痛", "无尿", "少尿",
     "全身浮肿", "谵妄", "癫痫持续状态"
 ]
+
+disease_list=[]
+
+with open(TARGET_PATH,encoding="UTF-8") as f:
+    for line in f:
+        disease_list.append(json.loads(line)["disease"])
+
+    # print(disease_list)

@@ -1,6 +1,7 @@
 import datetime
 from sqlalchemy import select
-from src.parent_child_chunk.init_model import engine, pg_vector
+
+from src.langgraph_demo.init_redis import redis_template
 from src.parent_child_chunk.insert_parent_child_ import disease_parent_chuck_table
 import re
 import json
@@ -19,10 +20,10 @@ from src.langgraph_demo.langgraph_demo_graph_constant import (
     NODE_RETRIEVE_KEYWORD, NODE_RETRIEVE_EMBEDDING,
     NODE_HANDLE_RETRIEVE_RES, NODE_SEND_TO_LLM,
     NODE_VALIDATE_REFERENCE, NODE_POST_GUARDRAIL, NODE_REFUSE_ANSWER, ANSWER_STATUS_DANGER, danger_word_list,
-    NODE_RETRIEVE_GRAPH,
+    NODE_RETRIEVE_GRAPH, disease_list,  NODE_FAST_ANSWER_HANDLER, NODE_FAST_ANSWER_JUDGER,
 )
 from src.parent_child_chunk.content_retrieve import retrieve_by_keyword, retrieve_by_embedding, \
-    get_doc_with_score_by_parent_id_list
+    get_doc_with_score_by_parent_id_list, retrieve_by_knowledge_graph
 from langchain_core.prompts import ChatPromptTemplate
 from typing import TypedDict
 from langgraph.graph import StateGraph,START,END
@@ -56,6 +57,9 @@ class State(TypedDict):
     danger_situation_list: list
     trace_id: str
     answer_status:str #有"danger"，"normal"，"refuse"三种状态
+    fast_answer:str #fast_answer对应的结果
+    redis_key:str #redis的key
+    use_llm:bool #是否使用了大模型
 
 #装饰器，记录节点耗时
 #因为graph药求传入的是一个函数，你这只是把fn替换成了time_recorder_wrapper，框架该传入state还是传入了state，包了一层而已
@@ -97,44 +101,8 @@ def retrieve_by_embedding_node(state:State):
     return {"embedding_res":retrieve_by_embedding(state['question'],10)}
 
 #第三条链路:知识图谱检索
-def retrieve_by_knowledge_graph(state:State):
-    #0,先把Table構建出來
-    symptoms_table =[]
-    for record in neo4j_driver.execute_query(
-            "match (n:SYMPTOM) RETURN n").records:
-        symptoms_table.append(record["n"]["name"])
-    # 1,先通过llm提取出用户问题的症状
-    # 1.1编写提示词
-    SYSTEM_PROMPT = ("请在如下用户的问题中提取出症状:"+"\n"+state['question']+"\n"
-                     +"""
-    注意,提取的症状只能按照如下的表来提取,提取的症状需要在下面找到对应意思的词,输出找到的词,返回格式是:["症状1","症状2"]
-    输出纯文本即可，不要输出其他内容，系统会解析
-    列表如下:
-    """+','.join(symptoms_table))
-
-    res = qwenModel.invoke(SYSTEM_PROMPT)
-
-    print(f"提取的症状为:{res.content}")
-
-    symptoms_list = json.loads(res.content)
-
-
-    #2,通过neo4j图数据库检索到病名
-    neo4j_diseases_res = neo4j_driver.execute_query(
-        "match (n:DISEASE)-[p:HAS_SYMPTOM]->(m:SYMPTOM) where m.name in $symptoms_list return n",
-        symptoms_list=symptoms_list).records
-    disease_list=[]
-    for disease in neo4j_diseases_res:
-        disease_list.append(disease["n"]["name"])
-    #3,通过病名查询出父块资料的ids
-    with (engine.begin() as connect):
-        parent_id_list = connect.execute(select(disease_parent_chuck_table.c.id)
-                              .where(disease_parent_chuck_table.c.disease.in_(disease_list))
-                              ).scalars().all()
-    #4,有了parentids，调用方法，制作成doc-score表返回
-    doc_score_list = get_doc_with_score_by_parent_id_list(parent_id_list, state["question"])
-    print(f"知识图谱检索结果为:{doc_score_list}")
-    return {"graph_res": doc_score_list}
+def retrieve_by_knowledge_graph_node(state:State):
+    return {"graph_res": retrieve_by_knowledge_graph(state["question"])}
 
 
 #依据获取到的doc获取该证据的分数
@@ -162,15 +130,19 @@ def handle_retrieve_res(state:State):
     keyword_ids=[]
     for keyword_re in keyword_res:
         keyword_ids.append(keyword_re["id"])
-    graph_res=[graph for graph in graph_res if graph["id"] not in embedding_ids and graph["id"] not in keyword_ids]
 
     # print("去重后的资料为：", keyword_res)
 
-    list_all = embedding_res + keyword_res + graph_res
+    list_all = embedding_res + keyword_res
     #4，根据疾病打分重排
     list_all.sort(key=lambda doc:(get_score(doc,question),doc["score"] if doc.get("score") else 0.999))
+
+    graph_res=[one_graph for one_graph in graph_res if one_graph["id"] not in embedding_ids and one_graph["id"] not in keyword_ids]
+
+    list_all=graph_res+list_all
+
     print("去重后的资料为：", list_all)
-    #5,拼贴文本
+    # 5,拼贴文本
     info=""
 
     for index,text in enumerate(list_all):
@@ -287,10 +259,19 @@ def send_to_llm(state:State):
     #         """
 
     res = chain.invoke({"info": info, "question": question})
+
+    #使用了大模型
+
     answer = res.content
+    #到了这个节点，就是没有缓存，存入redis
+
+    if state.get("redis_key",""):
+        redis_template.set(state["redis_key"], answer)
     return {"answer":  answer,
             "retry_count": state.get('retry_count', 0) + 1,
-            "answer_status": ANSWER_STATUS_NORMAL}
+            "answer_status": ANSWER_STATUS_NORMAL,
+            "use_llm": True
+            }
 
 #验证资料编号是否正确函数
 def validate_reference_number(state:State):
@@ -340,10 +321,61 @@ def validate_reference_number_router(state:State):
     else:
         return NODE_POST_GUARDRAIL
 
-#TODO 没有任何用例触发过这个逻辑
+
 def refuse_answer_handler(state:State):
     return {"answer": "本问题超出了我的能力范围"
         ,"answer_status":ANSWER_STATUS_REFUSE}
+
+
+#工具函数，判断问题有没有关键词
+def abstract_question_keyword(question: str):
+    # 1，去掉问题空白和句末的标点
+    question = question.strip().rstrip("? . ! ！？")
+    # 2，看看是否endwith("是什么","是啥","是怎么回事","是什么情况","是什么病","啥病","是怎么个事")
+    if question.endswith(("是什么", "是啥", "是怎么回事", "是什么情况", "是什么病", "啥病", "是怎么个事")):
+        return "定义"
+    # 3，看看是否startswith("介绍一下","讲讲","介绍","给我详细介绍")
+    if question.startswith(("介绍一下", "讲讲", "介绍", "给我详细介绍")):
+        return "定义"
+    # 4，如果有就return "定义"
+    # 5，没有就return None
+    return None
+
+def abstract_disease_keyword(question: str):
+    question = question.strip().rstrip("? . ! ！？")
+    res=[]
+    for disease in disease_list:
+        if disease in question:
+            res.append(disease)
+    #如没有,或者多个疾病，算复杂问题，交给LLM
+    return None if len(res)!=1 else res[0]
+
+#判断问题是否需要fast_answer
+def fast_answer_judger(state:State):
+    question = state['question']
+    #先提取问题的病和问法
+    disease = abstract_disease_keyword(question)
+    question_type = abstract_question_keyword(question)
+    #如果一个空，说明不能走缓存了
+    if not disease or not question_type:
+        return None
+    #拼贴redis的key
+    #如果不存在此key或者值不存在，发给大模型
+    redis_key = f"fast:{disease}:{question_type}"
+    if not redis_template.exists(redis_key) or not redis_template.get(redis_key):
+        return {"redis_key":redis_key}
+    #如果存在，维护一个fast_answer
+    return {"fast_answer": redis_template.get(redis_key),"redis_key":redis_key}
+
+def fast_answer_router(state:State):
+    if state.get("fast_answer", None):
+        #如果有fast_answer，走NODE_FAST_ANSWER
+        return NODE_FAST_ANSWER_HANDLER
+    return NODE_SEND_TO_LLM
+
+#如果要快速回答,要给answer生成一些什么
+def fast_answer_handler(state:State):
+    return {"answer": state["fast_answer"],"answer_status":ANSWER_STATUS_NORMAL}
 
 
 #整个建图流程：
@@ -352,7 +384,7 @@ graph = StateGraph(State)
 #2，增加所有节点
 graph.add_node(NODE_RETRIEVE_KEYWORD,    node_wrapper(retrieve_by_keyword_node))
 graph.add_node(NODE_RETRIEVE_EMBEDDING,  node_wrapper(retrieve_by_embedding_node))
-graph.add_node(NODE_RETRIEVE_GRAPH,      node_wrapper(retrieve_by_knowledge_graph))
+graph.add_node(NODE_RETRIEVE_GRAPH,      node_wrapper(retrieve_by_knowledge_graph_node))
 graph.add_node(NODE_SEND_TO_LLM,         node_wrapper(send_to_llm))
 graph.add_node(NODE_SAFETY_CHECK,        node_wrapper(safety_check))
 graph.add_node(NODE_HANDLE_RETRIEVE_RES, node_wrapper(handle_retrieve_res))
@@ -360,6 +392,8 @@ graph.add_node(NODE_VALIDATE_REFERENCE,  node_wrapper(validate_reference_number)
 graph.add_node(NODE_POST_GUARDRAIL,      node_wrapper(post_guardrail))
 graph.add_node(NODE_DANGER_HANDLER,      node_wrapper(danger_situation_handler))
 graph.add_node(NODE_REFUSE_ANSWER,       node_wrapper(refuse_answer_handler))
+graph.add_node(NODE_FAST_ANSWER_HANDLER, node_wrapper(fast_answer_handler))
+graph.add_node(NODE_FAST_ANSWER_JUDGER, node_wrapper(fast_answer_judger))
 #3，增加所有边
 #紧急情况检查优先
 graph.add_edge(START, NODE_SAFETY_CHECK)
@@ -372,11 +406,15 @@ graph.add_edge(NODE_RETRIEVE_KEYWORD,    NODE_HANDLE_RETRIEVE_RES)
 graph.add_edge(NODE_RETRIEVE_EMBEDDING,  NODE_HANDLE_RETRIEVE_RES)
 graph.add_edge(NODE_RETRIEVE_GRAPH,      NODE_HANDLE_RETRIEVE_RES)
 
-graph.add_edge(NODE_HANDLE_RETRIEVE_RES, NODE_SEND_TO_LLM)
+graph.add_edge(NODE_HANDLE_RETRIEVE_RES, NODE_FAST_ANSWER_JUDGER)
+graph.add_conditional_edges(NODE_FAST_ANSWER_JUDGER, fast_answer_router)
+
 graph.add_edge(NODE_SEND_TO_LLM,         NODE_VALIDATE_REFERENCE)
+
 #如果资料编号有错误，send_to_llm，如果资料编号没有错误，到post_guardrail处理,如果没有引用编号，拒绝回答
 graph.add_conditional_edges(NODE_VALIDATE_REFERENCE, validate_reference_number_router)
 graph.add_edge(NODE_REFUSE_ANSWER, NODE_POST_GUARDRAIL)
+graph.add_edge(NODE_FAST_ANSWER_HANDLER, END)
 graph.add_edge(NODE_POST_GUARDRAIL, END)
 #5,编译
 graph=graph.compile()
@@ -386,7 +424,7 @@ if __name__ == '__main__':
     trace_id = str(uuid.uuid4())
     start_time = time.time()
     answer=""
-    question="最近有点吞不进去东西，还有点无力，怎么回事，得什么病了"
+    question="菊池病是什么"
     try:
         state=graph.invoke({"question": question, "trace_id": trace_id})
         answer=state["answer"]
