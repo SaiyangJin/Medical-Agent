@@ -141,7 +141,7 @@ def handle_retrieve_res(state:State):
 
     list_all=graph_res+list_all
 
-    print("去重后的资料为：", list_all)
+    # print("去重后的资料为：", list_all)
     # 5,拼贴文本
     info=""
 
@@ -264,9 +264,6 @@ def send_to_llm(state:State):
 
     answer = res.content
     #到了这个节点，就是没有缓存，存入redis
-
-    if state.get("redis_key",""):
-        redis_template.set(state["redis_key"], answer)
     return {"answer":  answer,
             "retry_count": state.get('retry_count', 0) + 1,
             "answer_status": ANSWER_STATUS_NORMAL,
@@ -304,9 +301,12 @@ def post_guardrail(state:State):
         answer=answer.replace(certainty_replace[0],certainty_replace[1])
     #医疗免责声明
     answer += f"\n {MEDICAL_DISCLAIMER}\n"
-
-
     # print("最终答案：", answer)
+
+    #FastAnswer缓存，只有正常引用的回答才可以进缓存
+    if state.get("redis_key") and state.get("citation_status") == NORMAL_CITATION:
+        redis_template.set(state["redis_key"], answer)
+
     return {"answer": answer}
 
 #检验error函数，如果error==ERROR_CITATION，那就返回END,如果不是，那就返回CONTINUE导到下一个节点
@@ -321,11 +321,9 @@ def validate_reference_number_router(state:State):
     else:
         return NODE_POST_GUARDRAIL
 
-
 def refuse_answer_handler(state:State):
     return {"answer": "本问题超出了我的能力范围"
         ,"answer_status":ANSWER_STATUS_REFUSE}
-
 
 #工具函数，判断问题有没有关键词
 def abstract_question_keyword(question: str):

@@ -101,6 +101,7 @@ def retrieve_by_knowledge_graph(question:str)->list:
     SYSTEM_PROMPT = ("请在如下用户的问题中提取出症状:" +"\n" + question + "\n"
                      +"""
     注意,提取的症状只能按照如下的表来提取,提取的症状需要在下面找到对应意思的词,输出找到的词,返回格式是:["症状1","症状2"]
+    如果没有任何症状，返回[]
     输出纯文本即可，不要输出其他内容，系统会解析
     列表如下:
     """ +','.join(symptoms_table))
@@ -111,6 +112,7 @@ def retrieve_by_knowledge_graph(question:str)->list:
 
     symptoms_list = json.loads(res.content)
 
+    print("知识图谱提取的症状为:",res.content)
     #1.2如果提取不出症状，直接返回none
     if not symptoms_list:
         return []

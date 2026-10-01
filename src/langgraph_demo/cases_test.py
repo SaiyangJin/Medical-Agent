@@ -10,7 +10,7 @@ import uuid
 from src.langgraph_demo.content_retrieve_graph import graph, trace_list
 ROOT = Path(__file__).resolve().parents[2]
 CASES_PATH=ROOT/"data"/"test"/"cases.jsonl"
-
+CASES_SINGLE_PATH=ROOT/"data"/"test"/"cases_1.jsonl"
 CASES_1_PATH=ROOT/"data"/"test"/"cases_level1.jsonl"
 CASES_TEST_PATH=ROOT/"data"/"test"/"cases_test.jsonl"
 CASES_2_PATH=ROOT/"data"/"test"/"cases_level2.jsonl"
@@ -34,32 +34,47 @@ def cases_test(cases_path:Path):
             line_dict=json.loads(line)
             question = line_dict["question"]
             expect = line_dict["expect"]
-
+            rank=-1
             #打印出引用的info和status，和期待的status(expect)和info
             try:
                 #调用llm获取到最终的结果
                 start_time = datetime.datetime.now()
                 state=graph.invoke({"question": question, "trace_id": str(uuid.uuid4())})
                 #先判断status是否一致，不一致直接标记bad-case。
-                type=line_dict.get("type")
+                question_type=line_dict.get("type")
 
                 #==========================这一块就是进行Cases判断的了==========================
                 #统一判断部分
+                #判断回答状态
                 if state["answer_status"] != expect:
                     bad_case_reason += f"实际的回答状态{state['answer_status']}和期待的回答状态{expect}不一致\n"
-                if type== "knowledge_graph":
 
+                #特异性判断部分
+                #如果有expect_disease一栏，判断疾病在不在资料里，顺便判断出第几位
+                expect_disease = line_dict.get("expect_disease")
+                if expect_disease:
+                    finally_res = state.get("finally_res", [])
+                    if finally_res:
+                        #如果有finally_res，那就开始判断expect_disease在哪里
+                        for index,one in enumerate(finally_res):
+                            if one["disease"]== expect_disease:
+                                rank=index
+                                break
+                if question_type=="normal" and rank==-1:
+                    #找不到对应疾病，标记bad-case
+                    bad_case_reason += f"资料中找不到对应疾病{expect_disease}\n"
+                if question_type== "knowledge_graph":
                     #t1知识图谱类型
                     #t1.1先判断expect_disease在不在资料里面
-                    expect_disease = line_dict.get("expect_disease")
+                    # expect_disease = line_dict.get("expect_disease")
                     expect_graph_doc_num = line_dict.get("expect_graph_doc_num")
                     #然后需要判断期待病症在不在graph资料结果里边
                     disease_list = set([i["disease"] for i in state.get("graph_res", [])])
                     if len(disease_list)<expect_graph_doc_num:
-                        bad_case_reason += f"资料结果数{len(disease_list)}量少于期待数{expect_graph_doc_num}个\n"
-                    if expect_disease not in disease_list:
-                        bad_case_reason += f"期待的病症{expect_disease}不在查到的资料里边;\n"
-                if type=="fast_answer":
+                        bad_case_reason += f"知识图谱检索资料结果数{len(disease_list)}量少于期待数{expect_graph_doc_num}个\n"
+                    # if expect_disease and expect_disease not in disease_list:
+                    #     bad_case_reason += f"期待的病症{expect_disease}不在知识图谱查到的资料里边;\n"
+                if question_type== "fast_answer":
                     #t2快速回答类型
                     #t2.0先跑一遍模型
                     state_again=graph.invoke({"question": question, "trace_id": str(uuid.uuid4())})
@@ -75,11 +90,13 @@ def cases_test(cases_path:Path):
                 print(f"请求错误!traceid为: {trace_id} ,问题:{question}")
                 with engine.begin() as conn:
                     conn.execute(insert(request_table),{
+                        "type":question_type,
                         "question":question,
                         "passed": False,#系统错误
                         "trace_id":trace_id,#一次请求一个trace_id
                         "run_id": run_id,#这批的id，用于统计通过率
                         "fail_reason": "系统错误,请查看详细执行链路",
+                        "rank":rank,#如果是-1，那就说明没有找到对应疾病
                         "create_time": start_time,
                         "end_time": end_time,
                         "cost_time":(end_time-start_time).total_seconds(),
@@ -95,11 +112,13 @@ def cases_test(cases_path:Path):
             with engine.begin() as conn:
                 end_time = datetime.datetime.now()
                 conn.execute(insert(request_table),{
+                    "type":question_type,
                     "question":state["question"],
                     "passed": bad_case_reason=="",#不是bad_case才能通过
                     "trace_id":state["trace_id"],#一次请求一个trace_id
                     "run_id": run_id,#这批的id，用于统计通过率
                     "fail_reason":  bad_case_reason,
+                    "rank":rank,#如果是-1，那就说明没有找到对应疾病
                     "create_time": start_time,
                     "end_time": end_time,
                     "cost_time":(end_time-start_time).total_seconds(),
@@ -107,5 +126,6 @@ def cases_test(cases_path:Path):
                     "is_system_error": False
                 })
 if __name__ == '__main__':
-    cases_test(CASES_TEST_PATH)
+    # cases_test(CASES_SINGLE_PATH)
     # cases_test(CASES_4_PATH)
+    cases_test(CASES_2_PATH)

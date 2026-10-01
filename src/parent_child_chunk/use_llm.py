@@ -44,7 +44,7 @@ def use_model(question:str):
     #4.2,拼贴资料语句
     info=""
     list_all = embedding_res + keyword_res
-    print("去重后的资料为：", list_all)
+    # print("去重后的资料为：", list_all)
     for text in list_all:
         #拼  贴带换行，结构化的资料语句
         info+=f"\n\n【{text['disease']}-{text['title']}】{text['text']}\n\n"
