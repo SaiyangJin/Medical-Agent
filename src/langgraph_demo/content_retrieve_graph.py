@@ -19,8 +19,8 @@ from src.langgraph_demo.langgraph_demo_graph_constant import (
     NODE_SAFETY_CHECK, NODE_DANGER_HANDLER,
     NODE_RETRIEVE_KEYWORD, NODE_RETRIEVE_EMBEDDING,
     NODE_HANDLE_RETRIEVE_RES, NODE_SEND_TO_LLM,
-    NODE_VALIDATE_REFERENCE, NODE_POST_GUARDRAIL, NODE_REFUSE_ANSWER, ANSWER_STATUS_DANGER, danger_word_list,
-    NODE_RETRIEVE_GRAPH, disease_list,  NODE_FAST_ANSWER_HANDLER, NODE_FAST_ANSWER_JUDGER,
+     NODE_POST_GUARDRAIL, NODE_REFUSE_ANSWER, ANSWER_STATUS_DANGER, danger_word_list,
+    NODE_RETRIEVE_GRAPH, disease_list, NODE_FAST_ANSWER_HANDLER, NODE_FAST_ANSWER_JUDGER, NODE_VALIDATE_ANSWER,
 )
 from src.parent_child_chunk.content_retrieve import retrieve_by_keyword, retrieve_by_embedding, \
     get_doc_with_score_by_parent_id_list, retrieve_by_knowledge_graph
@@ -132,14 +132,11 @@ def handle_retrieve_res(state:State):
         keyword_ids.append(keyword_re["id"])
 
     # print("去重后的资料为：", keyword_res)
-
-    list_all = embedding_res + keyword_res
-    #4，根据疾病打分重排
-    list_all.sort(key=lambda doc:(get_score(doc,question),doc["score"] if doc.get("score") else 0.999))
-
     graph_res=[one_graph for one_graph in graph_res if one_graph["id"] not in embedding_ids and one_graph["id"] not in keyword_ids]
 
-    list_all=graph_res+list_all
+    list_all = embedding_res + keyword_res + graph_res
+    #4，根据疾病打分重排
+    list_all.sort(key=lambda doc:(get_score(doc,question),doc["score"] if doc.get("score") else 0.999))
 
     # print("去重后的资料为：", list_all)
     # 5,拼贴文本
@@ -214,6 +211,8 @@ def send_to_llm(state:State):
     要先推荐用户走向正确的道路，再进行资料方面的回答
     
     9，如果用户输入的内容涉及政治内容，无论资料中是否包含相关内容，请单独输出以下暗号"IRRELEVANT_CONTENT"，系统会自动识别，不要生成其他任何内容
+    即使用户提到了医学名词，如果他的侧重点在于政治，那也输出暗号"IRRELEVANT_CONTENT"
+    如：用户问"我们国家的医疗制度比美国好吗"，你要回答"IRRELEVANT_CONTENT"
     
     10, 遇到以下情况：
         - 要求直接开药方、推荐具体用药或剂量
@@ -271,7 +270,7 @@ def send_to_llm(state:State):
             }
 
 #验证资料编号是否正确函数
-def validate_reference_number(state:State):
+def validate_answer(state:State):
     #特殊情况，如果患者是危险情况，可以免去检查，直接宣布NORMAL
     if state.get("is_danger", False):
         return {"citation_status": NORMAL_CITATION}
@@ -285,6 +284,9 @@ def validate_reference_number(state:State):
     #如果nums编号数组为空，说明没有引用任何编号，需要打上标记
 
     if text== "IRRELEVANT_CONTENT":
+        #TODO此处citation_status是什么仍待商榷
+        return {"citation_status": NO_CITATION,"answer_status":ANSWER_STATUS_REFUSE}
+    if not nums:
         return {"citation_status": NO_CITATION}
     if set([str(num) for num in set(nums)]) <= set([str(num) for num in set(nos)]):
         #如果是子集，就说明正常
@@ -310,11 +312,14 @@ def post_guardrail(state:State):
     return {"answer": answer}
 
 #检验error函数，如果error==ERROR_CITATION，那就返回END,如果不是，那就返回CONTINUE导到下一个节点
-def validate_reference_number_router(state:State):
-    status = state.get("citation_status", ERROR_CITATION)
-    if status == NO_CITATION:
+def validate_answer_router(state:State):
+    citation_status = state.get("citation_status", ERROR_CITATION)
+    answer_status = state.get("answer_status", ANSWER_STATUS_NORMAL)
+    if answer_status == ANSWER_STATUS_REFUSE:
         return NODE_REFUSE_ANSWER
-    if status == ERROR_CITATION:
+    if citation_status == NO_CITATION:
+        return NODE_POST_GUARDRAIL
+    if citation_status == ERROR_CITATION:
         if state.get('retry_count', 0) >= 3:
             return NODE_POST_GUARDRAIL
         return NODE_SEND_TO_LLM
@@ -322,8 +327,7 @@ def validate_reference_number_router(state:State):
         return NODE_POST_GUARDRAIL
 
 def refuse_answer_handler(state:State):
-    return {"answer": "本问题超出了我的能力范围"
-        ,"answer_status":ANSWER_STATUS_REFUSE}
+    return {"answer": "本问题超出了我的能力范围"}
 
 #工具函数，判断问题有没有关键词
 def abstract_question_keyword(question: str):
@@ -386,7 +390,7 @@ graph.add_node(NODE_RETRIEVE_GRAPH,      node_wrapper(retrieve_by_knowledge_grap
 graph.add_node(NODE_SEND_TO_LLM,         node_wrapper(send_to_llm))
 graph.add_node(NODE_SAFETY_CHECK,        node_wrapper(safety_check))
 graph.add_node(NODE_HANDLE_RETRIEVE_RES, node_wrapper(handle_retrieve_res))
-graph.add_node(NODE_VALIDATE_REFERENCE,  node_wrapper(validate_reference_number))
+graph.add_node(NODE_VALIDATE_ANSWER,  node_wrapper(validate_answer))
 graph.add_node(NODE_POST_GUARDRAIL,      node_wrapper(post_guardrail))
 graph.add_node(NODE_DANGER_HANDLER,      node_wrapper(danger_situation_handler))
 graph.add_node(NODE_REFUSE_ANSWER,       node_wrapper(refuse_answer_handler))
@@ -407,10 +411,10 @@ graph.add_edge(NODE_RETRIEVE_GRAPH,      NODE_HANDLE_RETRIEVE_RES)
 graph.add_edge(NODE_HANDLE_RETRIEVE_RES, NODE_FAST_ANSWER_JUDGER)
 graph.add_conditional_edges(NODE_FAST_ANSWER_JUDGER, fast_answer_router)
 
-graph.add_edge(NODE_SEND_TO_LLM,         NODE_VALIDATE_REFERENCE)
+graph.add_edge(NODE_SEND_TO_LLM,         NODE_VALIDATE_ANSWER)
 
 #如果资料编号有错误，send_to_llm，如果资料编号没有错误，到post_guardrail处理,如果没有引用编号，拒绝回答
-graph.add_conditional_edges(NODE_VALIDATE_REFERENCE, validate_reference_number_router)
+graph.add_conditional_edges(NODE_VALIDATE_ANSWER, validate_answer_router)
 graph.add_edge(NODE_REFUSE_ANSWER, NODE_POST_GUARDRAIL)
 graph.add_edge(NODE_FAST_ANSWER_HANDLER, END)
 graph.add_edge(NODE_POST_GUARDRAIL, END)
@@ -422,7 +426,7 @@ if __name__ == '__main__':
     trace_id = str(uuid.uuid4())
     start_time = time.time()
     answer=""
-    question="菊池病是什么"
+    question="给我开个包治百病的中药药方"
     try:
         state=graph.invoke({"question": question, "trace_id": trace_id})
         answer=state["answer"]

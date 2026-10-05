@@ -1,23 +1,19 @@
 from langchain_core.messages import AIMessage
 
-from src.parent_child_chunk.init_model import engine
-from src.parent_child_chunk.insert_parent_child_ import disease_parent_chuck_table
-from sqlalchemy import select
 from src.parent_child_chunk.init_model import qwenModel
 import json
 from pathlib import Path
 
-from .neo4j_init import neo4j_driver
+from src.data_graph.neo4j_init import neo4j_driver
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SOURCE_PATH = ROOT / "data" / "chunk" / "parent.jsonl"
-def test():
-
-    # res= abstract()
-
+ABSTRACT_OUTPUT_PATH = ROOT / "data" / "graph" / "abstract_output.jsonl"
+def save_abstracted_data():
     res="""
     [{"帕金森氏症":[["静止性震颤","早期最明顯的症狀為静止性震颤（震）"],["肌肉僵硬","肌强直和「碎步／拖步」（硬）"],["运动迟缓","早期最明顯的症狀為...運動迟缓（慢）"],["姿势平衡障碍","姿势平衡障碍"],["步态异常","患者為避免跌倒可能會產生（走路時加速步伐且）"],["吞咽困难","其它可能伴隨的症狀包括...吞嚥困難等。"],["便秘","其它可能伴隨的症狀包括便秘"],["嗅觉减退","嗅覺喪失"],["睡眠障碍","患者會有嗜睡、快速動眼期中斷、失眠等現象。"],["认知障碍","帕金森氏病患者最常見的認知缺陷問題為，這將使患者在計畫、抽象思考、規則理解、做出適當行為、工作记忆、專注力等方面都受到影響"],["幻觉","約4%的帕金森氏病病患有幻觉或妄想等思覺失調症狀"],["妄想","約4%的帕金森氏病病患有幻觉或妄想等思覺失調症狀"],["关节痛","肢體僵硬也可能和關節痛有關，患者初期常會有此種症狀。"],["体位性低血压","自主神经系统的改變可能會導致姿勢性低血壓"],["多汗","自主神经系统的改變可能會導致...多汗"],["尿失禁","自主神经系统的改變可能會導致...尿失禁"],["性功能障碍","自主神经系统的改變可能會導致...性功能障碍"],["感觉异常","感官問題則可能表現在...感覺異常（皮膚刺痛和麻木）"],["痛觉减退","感官問題則可能表現在失去嗅觉、失去痛覺和感覺異常"],["皮脂溢出","自主神经系统的改變可能會導致...油性皮膚"]],"肌萎缩侧索硬化":[["肌肉无力","最早期的典型症狀通常是肌肉明顯的无力或/和萎缩。"],["肌肉萎缩","最早期的典型症狀通常是肌肉明顯的无力或/和萎缩。"],["吞咽困难","其他顯性的症狀包括吞嚥困難、痉挛或牵涉的肌肉僵硬。"],["构音障碍","說話含糊和带鼻音的現象"],["肌肉僵硬","痉挛或牵涉的肌肉僵硬"],["步态异常","走路或跑步時跌倒或絆倒，走路时明显拖腿而行。"],["舌头灵活性丧失","吞嚥困難和舌頭喪失灵活性。"],["反射亢进","上運動神經元受影響的症狀包括肌肉僵硬和痙攣、誇張的反射（反射亢進）以及過度的嘔吐反射。"],["肌肉震颤","可见的短暂的皮下肌肉抽搐（颤动）"],["情绪不稳","症狀包括無法控制的大笑、哭泣或微笑"],["呼吸困难","最終會造成、吞嚥，以及呼吸上的障礙"]],"脊髓性肌肉萎縮症":[["肌肉无力","造成运动神经元退化、肌肉萎縮，肌肉無力，最终因呼吸衰竭而死亡。"],["肌肉萎缩","造成运动神经元退化、肌肉萎縮"],["吞咽困难","肌张力和反射减弱的患儿存在吸吮、吞咽及呼吸困难。"],["呼吸困难","肌张力和反射减弱的患儿存在吸吮、吞咽及呼吸困难。"],["肌张力低下","出生后婴儿呈严重无力和肌张力缺乏。"],["反射减弱","反射消失，关节活动受限。"],["脊柱侧弯","这类儿童通常有严重的脊柱侧弯。"]],"重症肌無力":[["肌肉无力","肌肉會在活動期間逐漸變得軟弱，經過一段時間的休息便能恢復。"],["易疲劳","容易疲勞"],["眼睑下垂","患者首先注意到的徵狀是眼皮肌肉容易疲勞和軟弱...不對稱的眼皮下垂"],["复视","複視"],["吞咽困难","吞嚥困難和言語不清也可能是最初徵兆。"],["构音障碍","言語不清"],["呼吸困难","控制呼吸的肌肉都特別容易受影響...呼吸短暫而急促"],["面部表情减少","在面部表情上只有一個變化"],["步态不稳","步履不穩的步態"]]},{"静止性震颤":["静止性震颤","靜態顫抖"],"肌肉僵硬":["肌强直","肢體僵硬","肌肉僵硬","鉛管樣強直","齒輪樣強直","痉挛"],"运动迟缓":["運動迟缓","動作變慢","運動功能減退"],"姿势平衡障碍":["姿势平衡障碍","姿態不穩","經常跌倒"],"步态异常":["碎步／拖步","走路時加速步伐","步履不穩","拖腿而行","跌倒或絆倒"],"吞咽困难":["吞嚥困難","吞咽困難","吸吮、吞咽及呼吸困难"],"便秘":["便秘"],"嗅觉减退":["嗅覺喪失","失去嗅觉"],"睡眠障碍":["失眠","嗜睡","睡眠困難","睡眠障礙","快速動眼期中斷"],"认知障碍":["認知缺陷","認知困難","工作记忆、專注力等方面都受到影響"],"幻觉":["幻觉"],"妄想":["妄想"],"关节痛":["關節痛"],"体位性低血压":["姿勢性低血壓"],"多汗":["多汗"],"尿失禁":["尿失禁"],"性功能障碍":["性功能障碍"],"感觉异常":["感覺異常","皮膚刺痛和麻木"],"痛觉减退":["失去痛覺"],"皮脂溢出":["油性皮膚"],"肌肉无力":["肌肉軟弱","肌肉無力","肌无力","變得軟弱","嚴重無力"],"肌肉萎缩":["肌肉萎縮","肌肉明顯的无力或/和萎缩"],"构音障碍":["說話含糊","言語不清","構音障礙","說話障礙","带鼻音的現象"],"舌头灵活性丧失":["舌頭喪失灵活性"],"反射亢进":["誇張的反射","反射亢進"],"肌肉震颤":["皮下肌肉抽搐","肌肉顫動"],"情绪不稳":["情緒不穩","無法控制的大笑、哭泣或微笑"],"呼吸困难":["呼吸上的障礙","呼吸衰竭","控制呼吸的肌肉非常无力","呼吸短暫而急促"],"肌张力低下":["肌张力缺乏","肌张力減弱"],"反射减弱":["反射消失"],"脊柱侧弯":["脊柱侧弯"],"易疲劳":["容易疲勞"],"眼睑下垂":["眼皮下垂","眼瞼下垂","不對稱的眼皮下垂"],"复视":["複視"],"面部表情减少":["在面部表情上只有一個變化"]}]
     """
+    #拿到抽取的数据
 
 
     #把res1.content解析成列表数据结构,取出疾病-症状字典{"病1":[("症状1","相关句子1"),("症状2","相关句子2")]}
@@ -36,34 +32,7 @@ merge (m:SYMPTOM {name:disease_symptom["symptom"]})
 merge (n)-[p:HAS_SYMPTOM {quote:disease_symptom["quote"]}]->(m)""", disease_symptom_list=disease_symptom_list)
     # print(res.count())
 
-
-def abstract() -> AIMessage:
-    with engine.begin() as conn:
-        diseases=["肌萎缩侧索硬化","脊髓性肌肉萎縮症","重症肌無力","帕金森氏症"]
-        # diseases = ["肌萎缩侧索硬化"]
-
-    with engine.begin() as conn:
-        res = conn.execute(
-            select(disease_parent_chuck_table).where(disease_parent_chuck_table.c.disease.in_(diseases))).all()
-    info = ""
-    # row是rowMapping对象
-    info += "\n".join(["[" + row.disease + "]" + "[" + row.title + "]" + row.text for row in res])
-
-    # jsonLines=[]
-    # info=""
-    #
-    # with open(SOURCE_PATH,'r',encoding='utf-8') as f:
-    #     for line in f:
-    #         jsonLine = json.loads(line)
-    #         #1.3去除垃圾数据
-    #         jsonLines.append(jsonLine)
-    # info += "\n".join(["["+row['disease']+"]"+"["+row['title'] + "]" + row['text'] for row in jsonLines])
-
-    # 拼贴info，就是把row.title做标题和row.text作为文本拼贴起来
-
-    # print(info)
-
-    ABSTRACT_PROMPT = """
+ABSTRACT_PROMPT = """
     
     下面我会给你一些按照[疾病][标题]正文的格式的医学段落,请在谈及‘症状’、‘临床表现’等的段落中抽取症状和和对应的依据句子。\n如果发现段落描述的是历史，研究，人文等内容的，请跳过。
     
@@ -72,6 +41,16 @@ def abstract() -> AIMessage:
         失智症、重性抑郁障碍、焦虑症、额颞叶痴呆   ← 是【共病/并发症】，不是症状
         自主神经系统功能异常                    ← 是【类别】，不是症状
         运动神经元退化                          ← 是【病理机制】，不是症状。
+    
+    有一些症状过于宽泛，比如：焦虑，抑郁，恐惧；它们连接着无数个病，这种不值得作为症状参考的词不要提取
+    
+    不要抽取病名本身包含的词
+    
+    映射表只收录"真正做了同义合并"的情况。
+    如果原文词和标准词只差繁简（如 腹泻/腹瀉、疲劳/疲勞），不要收录 —— 那是无效条目。
+    归一化后的标准词统一用简体中文。
+    
+    
     
     你会得到一个结果，这个结果最好是这样的格式： 帕金森氏症:[["肌肉无力","帕金森氏症患者会肌肉无力"],["齿轮型僵硬","帕金森氏症还会导致齿轮型僵硬"]] , xxxxx:[["xxx","xxx"],["xxx","xxx"]]    
     
@@ -109,9 +88,53 @@ def abstract() -> AIMessage:
     [{"帕金森氏症":[["肌肉无力","患者常表现为肌肉變得軟弱、齿轮型僵硬。"],["齿轮型僵硬","患者常表现为肌肉變得軟弱、齿轮型僵硬。"]],"肌萎缩侧索硬化":[["肌肉无力","早期可见肌肉软弱、吞咽困难。"],["吞咽困难","早期可见肌肉软弱、吞咽困难。"]]},{"肌肉无力":["肌肉變得軟弱","肌肉软弱"],"齿轮型僵硬":["齿轮型僵硬"],"吞咽困难":["吞咽困难"]}]
     ===示例结束===
     
+    注意：输出结果必须是合法的json格式，不用换行，输出在一行即可
+    
     好了，医学段落如下：
-    """ + info
-    res = qwenModel.invoke(ABSTRACT_PROMPT)
+    """
 
-    print("res", res)
-    return res
+def abstract() :
+    # with engine.begin() as conn:
+    #     diseases=["肌萎缩侧索硬化","脊髓性肌肉萎縮症","重症肌無力","帕金森氏症"]
+        # diseases = ["肌萎缩侧索硬化"]
+
+    # with engine.begin() as conn:
+    #     res = conn.execute(
+    #         select(disease_parent_chuck_table).where(disease_parent_chuck_table.c.disease.in_(diseases))).all()
+    # info = ""
+    # # row是rowMapping对象
+    # info += "\n".join(["[" + row.disease + "]" + "[" + row.title + "]" + row.text for row in res])
+
+    jsonLines=[]
+    info=""
+
+    with open(SOURCE_PATH,'r',encoding='utf-8') as f:
+        count=0
+        for line in f:
+            count+=1
+            if count%20==0:
+                prompt_info = ABSTRACT_PROMPT + info
+                res = qwenModel.invoke(prompt_info)
+                #每20次读取写入一次文件
+                with open(ABSTRACT_OUTPUT_PATH,'a',encoding='utf-8') as f1:
+                    f1.write(res.content+"\n")
+                    info = ""
+
+                print(f"=====================已经完成{count}个文件=====================")
+            jsonLine = json.loads(line)
+            #1.3去除垃圾数据
+            jsonLines.append(jsonLine)
+            info += "\n"+"[" + jsonLine['disease'] + "]" + "[" + jsonLine['title'] + "]" + jsonLine['text']
+    prompt_info = ABSTRACT_PROMPT + info
+    res = qwenModel.invoke(prompt_info)
+    #每20次读取写入一次文件
+    with open(ABSTRACT_OUTPUT_PATH,'a',encoding='utf-8') as f1:
+        f1.write(res.content)
+
+    # info += "\n".join(["["+row['disease']+"]"+"["+row['title'] + "]" + row['text'] for row in jsonLines])
+
+    # 拼贴info，就是把row.title做标题和row.text作为文本拼贴起来
+    # return res
+
+if __name__ == '__main__':
+    abstract()

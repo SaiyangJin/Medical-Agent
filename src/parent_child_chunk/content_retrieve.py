@@ -134,24 +134,20 @@ def retrieve_by_knowledge_graph(question:str)->list:
                                          ).scalars().all()
 
     #4,有了parent_ids，调用方法，制作成每个病两个引用的doc-score表返回
-    res_doc_list=[]#放最终结果
-    res_doc_dict={}#key是病，val是出现了几次
+
+    res_doc_dict={}#key是病，val是score
+    parent_ids_res=[]#存ids
     #{"中风1":0.434，“中风2”:0.32}
     lists = get_doc_with_score_by_parent_id_list(parent_id_list, question)
-    lists.sort(key=lambda d: d["score"])
+    #lists内容是:[[“id”,"disease","title","text","revision","score"]]
+    # lists.sort(key=lambda d: d["score"])
     for doc in lists:
-        #现在我每个disease就取两个score最小的，如何实现这个api？难搞
-        #拿到这个病用几次了
-        used = res_doc_dict.get(doc["disease"], 0)
-        #如果用了两次
-        if used>=1:
-            #跳过
-            continue
-        res_doc_list.append(doc)
-        res_doc_dict[doc["disease"]]=used+1
-        # print(f"知识图谱检索结果为:{doc_score_list}")
+        #如果doc的score小于dict中的score
+        if doc["score"]<res_doc_dict.get(doc["disease"],99999999.0):
+            parent_ids_res.append(doc["id"])
+    #取出最终的父块
+    res_doc_list = find_parent_chuck_by_parent_id(parent_ids_res)
     return res_doc_list
-
 
 #通过parent_ids就能找到带问题距离的docs
 def get_doc_with_score_by_parent_id_list(parent_id_list: list[Any], question: str) -> list:

@@ -1,8 +1,10 @@
+import traceback
 from pathlib import Path
 import datetime
 
 from sqlalchemy.dialects.mysql import insert
 
+from src.langgraph_demo.init_redis import redis_template
 from src.langgraph_demo.trace_table_init import request_table, trace_table
 from src.parent_child_chunk.init_model import engine
 import json
@@ -20,8 +22,11 @@ CASES_4_PATH=ROOT/"data"/"test"/"cases_level4.jsonl"
 
 
 def cases_test(cases_path:Path):
+    #预操作：把redis清空
+    redis_template.flushall()
+
     #1先生成uuid
-    trace_id = str(uuid.uuid4())
+    # trace_id = str(uuid.uuid4())
     #问问题(⚠这里面传的参数会被维护在state里边)
 
     ###测试：跑一波测试用例，检测最终生成的链路和引用例，和期待的链路的引用是否一致，根据cases.jsonl
@@ -34,12 +39,18 @@ def cases_test(cases_path:Path):
             line_dict=json.loads(line)
             question = line_dict["question"]
             expect = line_dict["expect"]
+
             rank=-1
             #打印出引用的info和status，和期待的status(expect)和info
             try:
                 #调用llm获取到最终的结果
                 start_time = datetime.datetime.now()
                 state=graph.invoke({"question": question, "trace_id": str(uuid.uuid4())})
+
+                citation_status= state["citation_status"]
+                print("=======================引用状态======================\n", citation_status)
+                print("=======================引用状态======================\n")
+
                 #先判断status是否一致，不一致直接标记bad-case。
                 question_type=line_dict.get("type")
 
@@ -86,16 +97,18 @@ def cases_test(cases_path:Path):
                         bad_case_reason += f"fast_answer为空,缓存没有命中！\n"
                 #===========================判断结束=========================================
             except Exception as e:
+
                 end_time = datetime.datetime.now()
-                print(f"请求错误!traceid为: {trace_id} ,问题:{question}")
+                print(f"请求错误!traceid为: {state['trace_id']} ,问题:{question}")
                 with engine.begin() as conn:
                     conn.execute(insert(request_table),{
-                        "type":question_type,
+                        "type":line_dict.get("type"),
                         "question":question,
                         "passed": False,#系统错误
-                        "trace_id":trace_id,#一次请求一个trace_id
+                        "trace_id":state['trace_id'],#一次请求一个trace_id
                         "run_id": run_id,#这批的id，用于统计通过率
-                        "fail_reason": "系统错误,请查看详细执行链路",
+                        "citation_status": None,#引用状态,有"NO_CITATION,NORMAL_CITATION,ERROR_CITATION"
+                        "fail_reason": traceback.format_exc(),
                         "rank":rank,#如果是-1，那就说明没有找到对应疾病
                         "create_time": start_time,
                         "end_time": end_time,
@@ -112,11 +125,12 @@ def cases_test(cases_path:Path):
             with engine.begin() as conn:
                 end_time = datetime.datetime.now()
                 conn.execute(insert(request_table),{
-                    "type":question_type,
+                    "type":line_dict.get("type"),
                     "question":state["question"],
                     "passed": bad_case_reason=="",#不是bad_case才能通过
-                    "trace_id":state["trace_id"],#一次请求一个trace_id
+                    "trace_id":state['trace_id'],#一次请求一个trace_id
                     "run_id": run_id,#这批的id，用于统计通过率
+                    "citation_status": state.get("citation_status"),#引用状态,有"NO_CITATION,NORMAL_CITATION,ERROR_CITATION"
                     "fail_reason":  bad_case_reason,
                     "rank":rank,#如果是-1，那就说明没有找到对应疾病
                     "create_time": start_time,
@@ -125,7 +139,8 @@ def cases_test(cases_path:Path):
                     #嗯，如果是系统错误，那就是"系统错误"，如果是bad_case那就输入bad_case_reason
                     "is_system_error": False
                 })
+
 if __name__ == '__main__':
-    # cases_test(CASES_SINGLE_PATH)
+    cases_test(CASES_SINGLE_PATH)
     # cases_test(CASES_4_PATH)
-    cases_test(CASES_2_PATH)
+    # cases_test(CASES_2_PATH)
