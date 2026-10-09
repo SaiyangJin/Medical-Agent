@@ -75,20 +75,20 @@ def indicator_test(run_id:str=run_id)->list[str]:
                                      .limit(p95)).all()[-1][0]
         #7，计算rank小于5的条数(正常用例,passed)
         #7.1,取出所有正常用例,passed
-        recall_passed_count = conn.execute(pre_sql.where(request_table.c.type=="normal"
+        recall_count = conn.execute(pre_sql.where(request_table.c.type=="normal"
                                                          , request_table.c.passed == True)).all()
         #7.2,取出所有正常用例,passed,rank小于5
-        recall_count = conn.execute(pre_sql.where(request_table.c.type=="normal"
-                                                  , request_table.c.passed == True
-                                                  #rank=0,代表排第一位，以此类推，所以设置<5,底线是rank=4位，排第五位
-                                                  , request_table.c.rank<5 , request_table.c.rank>=0)).all()
+        recall_at_five_count = conn.execute(pre_sql.where(request_table.c.type == "normal"
+                                                          , request_table.c.passed == True
+                                                          #rank=0,代表排第一位，以此类推，所以设置<5,底线是rank=4位，排第五位
+                                                          , request_table.c.rank < 5, request_table.c.rank >= 0)).all()
 
         #8,计算MRR，就是1/rank的平均值（passed和normal）
         sum=0
-        for row in recall_passed_count:
+        for row in recall_count:
             #rank为0,代表排第一位，以此类推，所以加1
             sum+=1/(row.rank+1)
-        mrr = sum / len(recall_passed_count)
+        mrr = sum / len(recall_count)
 
         #9,引用正确率（passed，normal或者知识图谱）
         #9.1所有引用的个数
@@ -121,7 +121,7 @@ def indicator_test(run_id:str=run_id)->list[str]:
     #7. 处理数据--超时率（倒置）
     timeout_passed_level=(len(not_timeout_all_list)-len(timeout_all_list))/len(not_timeout_all_list) if len(not_timeout_all_list) > 0 else 0
     #8，recall@5通过率
-    recall5=len(recall_passed_count)/len(recall_count) if len(recall_count) > 0 else 0
+    recall5=len(recall_at_five_count)/len(recall_count) if len(recall_at_five_count) > 0 else 0
     #9,引用正确率
     citation_correct_rate = (len(CITATION_TOTAL_COUNT) - len(ERROR_CITATION_TOTAL_COUNT)) / len(CITATION_TOTAL_COUNT) if len(CITATION_TOTAL_COUNT) > 0 else 0
     #10，引用覆盖率

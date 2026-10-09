@@ -1,8 +1,8 @@
 import datetime
-from sqlalchemy import select
 
+import pypinyin
 from src.langgraph_demo.init_redis import redis_template
-from src.parent_child_chunk.insert_parent_child_ import disease_parent_chuck_table
+from src.parent_child_chunk.content_retrieve_constant import ABSTRACT_SYMPTOM_PROMPT
 import re
 import json
 import traceback
@@ -11,7 +11,6 @@ from src.service.user_chat_table_init import user_chat_request_table
 from src.parent_child_chunk.init_model import engine
 
 import time
-from src.data_graph.neo4j_init import neo4j_driver
 import uuid
 from src.langgraph_demo.langgraph_demo_graph_constant import (
     NORMAL_CITATION, ERROR_CITATION, NO_CITATION,
@@ -19,16 +18,16 @@ from src.langgraph_demo.langgraph_demo_graph_constant import (
     NODE_SAFETY_CHECK, NODE_DANGER_HANDLER,
     NODE_RETRIEVE_KEYWORD, NODE_RETRIEVE_EMBEDDING,
     NODE_HANDLE_RETRIEVE_RES, NODE_SEND_TO_LLM,
-     NODE_POST_GUARDRAIL, NODE_REFUSE_ANSWER, ANSWER_STATUS_DANGER, danger_word_list,
-    NODE_RETRIEVE_GRAPH, disease_list, NODE_FAST_ANSWER_HANDLER, NODE_FAST_ANSWER_JUDGER, NODE_VALIDATE_ANSWER,
+    NODE_POST_GUARDRAIL, NODE_REFUSE_ANSWER, ANSWER_STATUS_DANGER, danger_word_list,
+    NODE_RETRIEVE_GRAPH, NODE_FAST_ANSWER_HANDLER, NODE_FAST_ANSWER_JUDGER, NODE_VALIDATE_ANSWER,
+    disease_list, NODE_INPUT_GREATER, common_disease_dict, alias_transport_white_list, whole_symptoms_list
 )
-from src.parent_child_chunk.content_retrieve import retrieve_by_keyword, retrieve_by_embedding, \
-    get_doc_with_score_by_parent_id_list, retrieve_by_knowledge_graph
+from src.parent_child_chunk.content_retrieve import retrieve_by_keyword, retrieve_by_embedding, retrieve_by_knowledge_graph
 from langchain_core.prompts import ChatPromptTemplate
 from typing import TypedDict
 from langgraph.graph import StateGraph,START,END
 from src.parent_child_chunk.init_model import qwenModel
-from src.langgraph_demo.trace_table_init import request_table, trace_table
+from src.langgraph_demo.trace_table_init import  trace_table
 
 certainty_replace_list=[
     ("您确诊为","您的情况可能显示"),
@@ -44,6 +43,7 @@ TABLE=["肌肉萎缩", "肌肉无力", "吞咽困难", "肌肉痉挛", "肌肉�
 
 class State(TypedDict):
     question: str
+    changed_question: str
     embedding_res: list
     keyword_res: list
     graph_res: list
@@ -60,6 +60,8 @@ class State(TypedDict):
     fast_answer:str #fast_answer对应的结果
     redis_key:str #redis的key
     use_llm:bool #是否使用了大模型
+    standard_top_level: int
+    symptoms_list_in_question:list
 
 #装饰器，记录节点耗时
 #因为graph药求传入的是一个函数，你这只是把fn替换成了time_recorder_wrapper，框架该传入state还是传入了state，包了一层而已
@@ -92,62 +94,6 @@ def node_wrapper(fn):
         return result
     return time_recorder_wrapper
 
-#第一条链路:关键词检索
-def retrieve_by_keyword_node(state:State):
-    return {"keyword_res":retrieve_by_keyword(state['question'])}
-
-#第二条链路:向量检索
-def retrieve_by_embedding_node(state:State):
-    return {"embedding_res":retrieve_by_embedding(state['question'],10)}
-
-#第三条链路:知识图谱检索
-def retrieve_by_knowledge_graph_node(state:State):
-    return {"graph_res": retrieve_by_knowledge_graph(state["question"])}
-
-
-#依据获取到的doc获取该证据的分数
-def get_score(doc,question:str)->int:
-    if doc["disease"] in question:
-        return 0
-    return 1
-#处理检索结果,去重,拼贴info
-def handle_retrieve_res(state:State):
-    #1,取出两个返回的结果
-    embedding_res = state['embedding_res']
-    keyword_res = state['keyword_res']
-    graph_res = state['graph_res']
-    question=state["question"]
-    nos = []
-    embedding_ids=set()
-    #2,制作去重id集合
-    for embedding_re in embedding_res:
-        embedding_ids.add(embedding_re["id"])
-
-
-    #TODO这边还需要取一个最小的score
-    #3，列表推导式把keyword中在embedding_res中的元素过滤掉，只留下特异性元素，性能更加
-    keyword_res=[keyword for keyword in keyword_res if keyword["id"] not in embedding_ids]
-    keyword_ids=[]
-    for keyword_re in keyword_res:
-        keyword_ids.append(keyword_re["id"])
-
-    # print("去重后的资料为：", keyword_res)
-    graph_res=[one_graph for one_graph in graph_res if one_graph["id"] not in embedding_ids and one_graph["id"] not in keyword_ids]
-
-    list_all = embedding_res + keyword_res + graph_res
-    #4，根据疾病打分重排
-    list_all.sort(key=lambda doc:(get_score(doc,question),doc["score"] if doc.get("score") else 0.999))
-
-    # print("去重后的资料为：", list_all)
-    # 5,拼贴文本
-    info=""
-
-    for index,text in enumerate(list_all):
-        #拼  贴带换行，结构化的资料语句
-        nos.append(index+1)
-        info+=f"\n\n[{index+1}]:【{text['disease']}-{text['title']}】{text['text']}\n\n"
-    return {"keyword_res":keyword_res,"info":info,"finally_res":list_all,"file_nos":nos}
-
 #检查用户危急情况的函数
 def safety_check(state:State):
     question = state['question']
@@ -170,17 +116,169 @@ def safety_check_router(state:State):
     if state.get("is_danger", False):
         return NODE_DANGER_HANDLER
     else:
-        return [NODE_RETRIEVE_KEYWORD, NODE_RETRIEVE_EMBEDDING, NODE_RETRIEVE_GRAPH]
+        return NODE_FAST_ANSWER_JUDGER
 #安全检查出危险情况之后，调用的函数
 def danger_situation_handler(state:State):
     return {"answer": "您描述的情况是危险情况，需要紧急处理，请立即就医。","answer_status":ANSWER_STATUS_DANGER}
+
+#输入优化节点,输出优化后的问题
+def input_greater(state:State):
+    question = state['question']
+    for alias in alias_transport_white_list:
+        if alias in question:
+            return {"changed_question":question}
+    #如果问题长度太小，不值得做什么纠正，跳过
+    if len(question)<2:
+        return {"changed_question":question}
+    #制作standard_top_level,确定窗口匹配的上限
+    lens = max([len(key) for key in common_disease_dict.keys()])
+    standard_top_level=lens if lens>11 else 11
+    #检查问题在不在alias转化白名单里面，如在，那就跳过PART2别名病名转化
+
+    #=============================PART1 拼音纠正&别名病名转化================================
+    pinyin_disease_replace_list=[]
+    alias_disease_replace_list=[]
+    #- 先获取到所有病名，转化为拼音-病名字典。
+    pinyin_disease_map={}
+    for disease in disease_list:
+        pinyin_disease_map["".join(pypinyin.lazy_pinyin(disease))]=disease
+    #- 然后取5次窗口，2-top_level的窗口（如果用户问题很短，但是大于2个字，上限按用户问题长度来）注意先6后2，防止截断长病名
+
+    #top_level就是窗口上限，防止系统错误，question上限是ken(question)，上限是standard_top_level
+    changed_question=question
+
+    top_level=standard_top_level if len(question)>standard_top_level else len(question)
+    #- 每次窗口把问题都扫一遍，如果发现了病表中有完全一样的，那就记录起止位置和问题
+    for i in range(top_level+1,0,-1):
+        for j in range(0,len(question)-i):
+            #获取窗口起止，获取窗口值
+            window_start=j
+            window_end=i+j
+            word=question[window_start:window_end+1]
+            #拼音化，和列表匹配
+            word_pinyin="".join(pypinyin.lazy_pinyin(word))
+            #如果在列表中，在mao中保存位置和替换的词
+            if word_pinyin in pinyin_disease_map.keys() and word not in disease_list:
+                # print(f"匹配到起点为{window_start}，终点为{window_end}的词{word}拼音和资料中的病名{pinyin_disease_map[word_pinyin]}一致，替换")
+                pinyin_disease_replace_list.append((window_start,window_end,pinyin_disease_map[word_pinyin]))
+
+            #进行别名病名转化，如果word在别名表中，要替换为专业病名
+            if word in common_disease_dict.keys() and word not in disease_list:
+                # print(f"匹配到起点为{window_start}，终点为{window_end}的词{word}在俗称表中，替换")
+                alias_disease_replace_list.append((word,common_disease_dict[word]))
+
+    #- 把原始字符串按照dict进行替换，变成新生成的字符串儿
+    for start,end,disease_name in pinyin_disease_replace_list:
+        changed_question= changed_question[:start] + disease_name + changed_question[end + 1:]
+    for old_word,new_word in alias_disease_replace_list:
+        changed_question= changed_question.replace(old_word,new_word)
+    #ij都是有效的下标
+
+    #=============================PART2 症状词-专业名词转化================================
+    symptoms_list_in_question=[]
+    if whole_symptoms_list:
+        SYSTEM_PROMPT = ("请在如下用户的问题中提取出症状:" +"\n" + changed_question + "\n"
+                         + ABSTRACT_SYMPTOM_PROMPT +','.join(whole_symptoms_list))
+        res = qwenModel.invoke(SYSTEM_PROMPT)
+
+        #提取到的症状如[{"text":"头昏沉沉的","symptom":"头晕"}]
+        # print("res提取到的症状",res.content)
+
+        text_symptom_dict_list = json.loads(res.content)
+
+
+        #如果res有结果那就狠狠的开始替换原文,并获取问题中的症状列表
+        if  text_symptom_dict_list:
+            symptoms_list_in_question=list(set([res["symptom"] for res in text_symptom_dict_list]))
+            #替换原文，替换为专业的症状词
+            for text_symptom_dict in text_symptom_dict_list:
+                if text_symptom_dict["text"]:
+                    changed_question=changed_question.replace(text_symptom_dict["text"],text_symptom_dict["symptom"])
+
+
+
+    #返回结果
+    return {"changed_question":changed_question,"symptoms_list_in_question":symptoms_list_in_question}
+
+def retrieve_by_keyword_node(state:State):
+    return {"keyword_res":retrieve_by_keyword(state['changed_question'])}
+
+#第二条链路:向量检索
+def retrieve_by_embedding_node(state:State):
+    return {"embedding_res":retrieve_by_embedding(state['changed_question'],10)}
+
+#第三条链路:知识图谱检索
+def retrieve_by_knowledge_graph_node(state:State):
+    return {"graph_res": retrieve_by_knowledge_graph(state["changed_question"],state.get("symptoms_list_in_question",None))}
+
+#依据获取到的doc获取该证据的分数
+def get_score(doc,question:str)->int:
+    if doc["disease"] in question:
+        return 0
+    return 1
+#处理检索结果,去重,拼贴info
+def handle_retrieve_res(state:State):
+    #1,取出两个返回的结果
+    embedding_res = state['embedding_res']
+    keyword_res = state['keyword_res']
+    graph_res = state['graph_res']
+    changed_question=state["changed_question"]
+    nos = []
+    embedding_ids=set()
+    #2,制作去重id集合
+    for embedding_re in embedding_res:
+        embedding_ids.add(embedding_re["id"])
+
+    #TODO这边还需要取一个最小的score
+    #3，列表推导式把keyword中在embedding_res中的元素过滤掉，只留下特异性元素，性能更加
+    temp_keyword_res=[keyword for keyword in keyword_res if keyword["id"] not in embedding_ids]
+    keyword_ids=[]
+    for keyword_re in temp_keyword_res:
+        keyword_ids.append(keyword_re["id"])
+
+    temp_graph_res=[one_graph for one_graph in graph_res if one_graph["id"] not in embedding_ids and one_graph["id"] not in keyword_ids]
+
+    list_all = embedding_res + temp_keyword_res + temp_graph_res
+    #
+    #4，docs列表
+    for doc in list_all:
+        #4.1取出doc的id
+        doc_id = doc["id"]
+        #4.2求出三路对应的排名,在各路的检索结果里找id等于本id的
+        embedding_rank = next((rank for rank, doc in enumerate(embedding_res) if doc["id"] == doc_id), -1)
+        keyword_rank = next((rank for rank, doc in enumerate(keyword_res) if doc["id"] == doc_id), -1)
+        graph_rank = next((rank for rank, doc in enumerate(graph_res) if doc["id"] == doc_id), -1)
+        #4.3根据rrf公司算出rrf分数(60是经验值，直接使用)
+        res=0.0
+        if embedding_rank!=-1:
+            res+=1/(embedding_rank+60)
+        if keyword_rank!=-1:
+            res+=1/(keyword_rank+60)
+        if graph_rank!=-1:
+            res+=1/(graph_rank+60)
+        doc["rrf_score"]=res
+    #4，根据疾病打分重排
+    list_all.sort(key=lambda one:(get_score(one, changed_question), -one["rrf_score"] if one.get("rrf_score") else 1))
+
+    print("去重后的资料为：", list_all)
+    # 5,拼贴文本
+    info=""
+
+    for index,text in enumerate(list_all):
+        #拼  贴带换行，结构化的资料语句
+        nos.append(index+1)
+        info+=f"\n\n[{index+1}]:【{text['disease']}-{text['title']}】{text['text']}\n\n"
+    return {"keyword_res":temp_keyword_res,"graph_res":graph_res,"info":info,"finally_res":list_all,"file_nos":nos}
+
+
+
 
 #定义系统提示词，发送给大模型，取得结果
 def send_to_llm(state:State):
     # raise Exception("安全检查错误")
 
     info = state['info']
-    question = state['question']
+    changed_question = state['changed_question']
 
     #1，定义系统提示词
     SYSTEM_PROMPT = """
@@ -230,7 +328,7 @@ def send_to_llm(state:State):
     """
 
     #2,模板类拼贴,from_message就是从一系列的结构化消息来初始化这个模板类
-    template = ChatPromptTemplate.from_messages([("system", SYSTEM_PROMPT), ("human", "资料：{info}\n问题：{question}")])
+    template = ChatPromptTemplate.from_messages([("system", SYSTEM_PROMPT), ("human", "资料：{info}\n问题：{changed_question}")])
 
     #3,管道符，把template的输出转化为输入交给llm
     chain=template|qwenModel
@@ -243,7 +341,9 @@ def send_to_llm(state:State):
         for danger_situation in danger_situation_list:
             danger_prompt_str+=danger_situation+"\n"
         info+= danger_prompt_str+"\n"
-        res = chain.invoke({"info": info, "question": question})
+        print(f"替换之后的问题是:{changed_question}")
+
+        res = chain.invoke({"info": info, "changed_question": changed_question})
         return {"answer": res.content}
     #5,传递invoke
     #资料引用错误，提示(目前只有这一种情况)
@@ -257,7 +357,7 @@ def send_to_llm(state:State):
     #         \n\n
     #         """
 
-    res = chain.invoke({"info": info, "question": question})
+    res = chain.invoke({"info": info, "changed_question": changed_question})
 
     #使用了大模型
 
@@ -354,10 +454,9 @@ def abstract_disease_keyword(question: str):
 
 #判断问题是否需要fast_answer
 def fast_answer_judger(state:State):
-    question = state['question']
     #先提取问题的病和问法
-    disease = abstract_disease_keyword(question)
-    question_type = abstract_question_keyword(question)
+    disease = abstract_disease_keyword(state['question'])
+    question_type = abstract_question_keyword(state['question'])
     #如果一个空，说明不能走缓存了
     if not disease or not question_type:
         return None
@@ -367,13 +466,15 @@ def fast_answer_judger(state:State):
     if not redis_template.exists(redis_key) or not redis_template.get(redis_key):
         return {"redis_key":redis_key}
     #如果存在，维护一个fast_answer
+    print("使用了缓存")
     return {"fast_answer": redis_template.get(redis_key),"redis_key":redis_key}
 
 def fast_answer_router(state:State):
     if state.get("fast_answer", None):
         #如果有fast_answer，走NODE_FAST_ANSWER
         return NODE_FAST_ANSWER_HANDLER
-    return NODE_SEND_TO_LLM
+    return NODE_INPUT_GREATER
+
 
 #如果要快速回答,要给answer生成一些什么
 def fast_answer_handler(state:State):
@@ -396,37 +497,45 @@ graph.add_node(NODE_DANGER_HANDLER,      node_wrapper(danger_situation_handler))
 graph.add_node(NODE_REFUSE_ANSWER,       node_wrapper(refuse_answer_handler))
 graph.add_node(NODE_FAST_ANSWER_HANDLER, node_wrapper(fast_answer_handler))
 graph.add_node(NODE_FAST_ANSWER_JUDGER, node_wrapper(fast_answer_judger))
+graph.add_node(NODE_INPUT_GREATER, node_wrapper(input_greater))
 #3，增加所有边
 #紧急情况检查优先
 graph.add_edge(START, NODE_SAFETY_CHECK)
 #如果安全检查有问题，到danger_situation_handler处理
 #如果安全检查没有问题，到retrieve_by_keyword_node和retrieve_by_embedding_node
 graph.add_conditional_edges(NODE_SAFETY_CHECK, safety_check_router)
-graph.add_edge(NODE_DANGER_HANDLER, NODE_POST_GUARDRAIL)
+graph.add_conditional_edges(NODE_FAST_ANSWER_JUDGER, fast_answer_router)
+
+
 #4，尾部连接
+graph.add_edge(NODE_INPUT_GREATER,NODE_RETRIEVE_KEYWORD)
+graph.add_edge(NODE_INPUT_GREATER,NODE_RETRIEVE_EMBEDDING)
+graph.add_edge(NODE_INPUT_GREATER,NODE_RETRIEVE_GRAPH)
 graph.add_edge(NODE_RETRIEVE_KEYWORD,    NODE_HANDLE_RETRIEVE_RES)
 graph.add_edge(NODE_RETRIEVE_EMBEDDING,  NODE_HANDLE_RETRIEVE_RES)
 graph.add_edge(NODE_RETRIEVE_GRAPH,      NODE_HANDLE_RETRIEVE_RES)
 
-graph.add_edge(NODE_HANDLE_RETRIEVE_RES, NODE_FAST_ANSWER_JUDGER)
-graph.add_conditional_edges(NODE_FAST_ANSWER_JUDGER, fast_answer_router)
-
+graph.add_edge(NODE_HANDLE_RETRIEVE_RES, NODE_SEND_TO_LLM)
 graph.add_edge(NODE_SEND_TO_LLM,         NODE_VALIDATE_ANSWER)
 
 #如果资料编号有错误，send_to_llm，如果资料编号没有错误，到post_guardrail处理,如果没有引用编号，拒绝回答
 graph.add_conditional_edges(NODE_VALIDATE_ANSWER, validate_answer_router)
 graph.add_edge(NODE_REFUSE_ANSWER, NODE_POST_GUARDRAIL)
+graph.add_edge(NODE_DANGER_HANDLER, NODE_POST_GUARDRAIL)
 graph.add_edge(NODE_FAST_ANSWER_HANDLER, END)
 graph.add_edge(NODE_POST_GUARDRAIL, END)
+
 #5,编译
 graph=graph.compile()
 
 
 if __name__ == '__main__':
+
+    #发送问题
     trace_id = str(uuid.uuid4())
     start_time = time.time()
     answer=""
-    question="给我开个包治百病的中药药方"
+    question="我得过重疯和血友，医生说这个中风又叫脑梗死，最近头晕晕的，还老睡不着，怎么回事呀！"
     try:
         state=graph.invoke({"question": question, "trace_id": trace_id})
         answer=state["answer"]

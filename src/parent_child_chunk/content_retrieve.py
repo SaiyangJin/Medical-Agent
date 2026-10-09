@@ -1,13 +1,14 @@
 import time
 from typing import Any
-
+from collections import defaultdict
 import jieba
 import rank_bm25
 from sqlalchemy import Table, MetaData
 import datetime
 from sqlalchemy import select
 
-
+from src.langgraph_demo.langgraph_demo_graph_constant import whole_symptoms_list
+from src.parent_child_chunk.content_retrieve_constant import ABSTRACT_SYMPTOM_PROMPT
 from src.parent_child_chunk.insert_parent_child_ import disease_parent_chuck_table
 
 import json
@@ -32,24 +33,27 @@ def retrieve_by_embedding(question:str,k=5)->list:
             continue
         parent_id = search_re.metadata['parent_id']
         #2.2找到对应list的父块,如果不在里面，直接加入
-        if not parent_id in best_score_parent_ids_dict.keys():
+        if not parent_id in  best_score_parent_ids_dict.keys():
             best_score_parent_ids_dict[parent_id]=score
         else:
             #2.3如果在里面，比较score，如果score更小，加入到里面
             if score<best_score_parent_ids_dict[parent_id]:
                 best_score_parent_ids_dict[parent_id]=score
-    #3,传入dict，通过数据库查询父块
-    return find_parent_chuck_by_parent_id_scores(best_score_parent_ids_dict)
+    parent_ids = list(best_score_parent_ids_dict.keys())
+    parent_ids.sort(key=lambda one:best_score_parent_ids_dict[one])
+    #3,best_score_parent_ids_dict字典依据score来排,越小越靠前
+    #4,传入dict，通过数据库查询父块
+    docs = find_parent_chuck_by_parent_ids(best_score_parent_ids_dict)
+    return docs
 
-#关键词检索到父块的函数
+#关键词检索到父块的函数，根据bm2.5的排名，确定最终的父块
 def retrieve_by_keyword(question:str)-> list:
-
     keyword_limit_number=1
     langchain_pg_embedding_table = Table('langchain_pg_embedding', MetaData(), autoload_with=engine)
     #分好的关键词列表，用于建立倒排索引
-    child_chunk_keyword_res=[]
+    child_chunk_documents=[]
     #父id列表（和关键词一一对应）
-    child_chunk_metadata_res=[]
+    child_chunk_parentids_res=[]
     #1.1查出所有子块数据
     select_statement = select(langchain_pg_embedding_table.c.id, langchain_pg_embedding_table.c.document,
                               langchain_pg_embedding_table.c.cmetadata)
@@ -59,94 +63,96 @@ def retrieve_by_keyword(question:str)-> list:
     for one_res in res.all():
         #1.2.1子块的文本数据和metadata
         document = one_res["document"]
-        metadata = one_res["cmetadata"]
+        metadata = one_res["cmetadata"]["parent_id"]
         #1.2.2把子块切割好
-        child_chunk_keyword_res.append(jieba.lcut(document))
-        child_chunk_metadata_res.append(metadata)
-    #2，关键词检索，返回distance得分，越小越相关
+        child_chunk_documents.append(jieba.lcut(document))
+        child_chunk_parentids_res.append(metadata)
+    #2，关键词检索逻辑，最终制作出parent_id_score映射表
     #2.1，用切割好的子块列表建索引(倒排索引)
-    bm25 = rank_bm25.BM25Okapi(child_chunk_keyword_res)
+    bm25 = rank_bm25.BM25Okapi(child_chunk_documents)
     #2.2，然后根据问题切分打分
     #2.3，返回结果列表
     scores = bm25.get_scores(jieba.lcut(question))
-    #2.3.1先number化scores，获取下标,然后调用数组的排序方法，然后翻转，形成从大到小的下标数组
-    #TODO 这个5还要测。
+    #2.4立刻制作parent_id_score列表，防止下标错误，后续排名能瞬间取出parent_id
+    parent_id_score_list=[]
+    for index,score in list(enumerate(scores)):
+        parent_id_score_list.append((child_chunk_parentids_res[index],score))
 
-    #这边过滤掉关键词匹配度打分小于1的垃圾数据
-    #是下标对score的数组（0,5.43），（1,5.23）这类的
-    score_index_list = list(filter(lambda one:one[1]>keyword_limit_number,list(enumerate(scores))))
-    #把这个数组用score（就是one[1]）进行降序排列
-    score_index_list.sort(key=lambda one: one[1], reverse=True)
-    #2.3.1获取五个最相关的子块的下标
-    #parentid数据
-    parent_id_list=[]
-    for e in score_index_list[:5]:
-        index_in_chuck = e[0]
-        #json.load是文件转json，json.loads是字符串转字典
-        parent_id_list.append(child_chunk_metadata_res[index_in_chuck]["parent_id"])
+    parent_ids=set()
+    #3，处理parent_id_score列表，获取到最终的结果
+    #3.1过滤score太小的
+    parent_id_score_list_temp = list(filter(lambda one:one[1]>keyword_limit_number,list(parent_id_score_list)))
+    #3.2按照score排序
+    parent_id_score_list_temp.sort(key=lambda one: one[1], reverse=True)
+    #3.3取parentids，直到parentids满10个
+    for parent_id_score in parent_id_score_list_temp:
+        if len(parent_ids)>=10:
+            break
+        parent_ids.add(parent_id_score[0])
 
-    return get_doc_with_score_by_parent_id_list(parent_id_list, question)
+    return find_parent_chuck_by_parent_ids(list(parent_ids))
 
-def retrieve_by_knowledge_graph(question:str)->list:
-    #0,先把Table構建出來
-    symptoms_table =[]
-    for record in neo4j_driver.execute_query(
-            "match (n:SYMPTOM) RETURN n").records:
-        symptoms_table.append(record["n"]["name"])
-    #0.5如果没病，抽取不出来，直接返回none
-    if not symptoms_table:
-        return []
-    # 1,先通过llm提取出用户问题的症状
-    # 1.1编写提示词
-    SYSTEM_PROMPT = ("请在如下用户的问题中提取出症状:" +"\n" + question + "\n"
-                     +"""
-    注意,提取的症状只能按照如下的表来提取,提取的症状需要在下面找到对应意思的词,输出找到的词,返回格式是:["症状1","症状2"]
-    如果没有任何症状，返回[]
-    输出纯文本即可，不要输出其他内容，系统会解析
-    列表如下:
-    """ +','.join(symptoms_table))
+#传入的symptoms_list_in_question是问题中的症状词列表，没有走input_greater为null
+def retrieve_by_knowledge_graph(question:str,symptoms_list_in_question:list=None)->list:
+    disease_count_dict=defaultdict(int)
+    #判断list是否为none，如果是none，走老检索逻辑不然就直接使用
+    if symptoms_list_in_question is None:
+        # 1,先通过llm提取出用户问题的症状
+        # 1.1编写提示词
+        SYSTEM_PROMPT = ("请在如下用户的问题中提取出症状:" +"\n" + question + "\n"
+                         +"""
+            注意,提取的症状只能按照如下的表来提取,提取的症状需要在下面找到对应意思的词,输出找到的词,返回格式是这样的json:["症状1","症状2"]
+            如果没有任何症状，返回[]
+            输出纯文本即可，不要输出其他内容，系统会解析
+            列表如下:
+            """ +','.join(whole_symptoms_list))
 
-    res = qwenModel.invoke(SYSTEM_PROMPT)
+        res = qwenModel.invoke(SYSTEM_PROMPT)
 
-    # print(f"提取的症状为:{res.content}")
-
-    symptoms_list = json.loads(res.content)
-
-    print("知识图谱提取的症状为:",res.content)
-    #1.2如果提取不出症状，直接返回none
-    if not symptoms_list:
+        #提取到的症状如[{"text":"头昏沉沉的","symptom":"头晕"}]
+        res_list = json.loads(res.content)
+        symptoms_list_in_question=list(set(res_list))
+    if not symptoms_list_in_question:
         return []
 
     #2,通过neo4j图数据库检索到病名
     neo4j_diseases_res = neo4j_driver.execute_query(
-        "match (n:DISEASE)-[p:HAS_SYMPTOM]->(m:SYMPTOM) where m.name in $symptoms_list return n",
-        symptoms_list=symptoms_list).records
-    disease_list=[]
-    for disease in neo4j_diseases_res:
-        disease_list.append(disease["n"]["name"])
-    #3,如果数据库内没有匹配的病，那就返回none
+        "MATCH (n:DISEASE )-[p:HAS_SYMPTOM]->(m:SYMPTOM) where m.name in $symptoms_list return n.name as name,count(m) as hit order by hit desc ",
+        symptoms_list=symptoms_list_in_question).records
+    #
+
+    #返回一个字典，在neo4j结果直接取病名，然后计数加hit，得到病名-统计表
+    disease_count_dict={neo4j_diseases_re["name"]:neo4j_diseases_re["hit"] for neo4j_diseases_re in neo4j_diseases_res}
+    #如果数据库内没有匹配的病，那就返回none
+    disease_list = list(disease_count_dict.keys())
     if not disease_list:
         return []
-    #3,通过病名查询出父块资料的ids
+    #3,通过病名查询出父块资料的ids(注意，一个病名有多个父块)
     with (engine.begin() as connect):
         parent_id_list = connect.execute(select(disease_parent_chuck_table.c.id)
                                          .where(disease_parent_chuck_table.c.disease.in_(disease_list))
                                          ).scalars().all()
 
-    #4,有了parent_ids，调用方法，制作成每个病两个引用的doc-score表返回
+    #4,有了disease_list，获取到对应的父块资料的，但是由于一个病只能有一条父块上桌，所以需要比出这个病的最小score的doc
 
-    res_doc_dict={}#key是病，val是score
-    parent_ids_res=[]#存ids
+    disease_doc_dict={}#key是病，val是score
+    disease_id_dict={}#存ids
     #{"中风1":0.434，“中风2”:0.32}
     lists = get_doc_with_score_by_parent_id_list(parent_id_list, question)
     #lists内容是:[[“id”,"disease","title","text","revision","score"]]
     # lists.sort(key=lambda d: d["score"])
     for doc in lists:
         #如果doc的score小于dict中的score
-        if doc["score"]<res_doc_dict.get(doc["disease"],99999999.0):
-            parent_ids_res.append(doc["id"])
-    #取出最终的父块
-    res_doc_list = find_parent_chuck_by_parent_id(parent_ids_res)
+        if doc["score"]<disease_doc_dict.get(doc["disease"],99999999.0):
+            disease_doc_dict[doc["disease"]]=doc["score"]
+            disease_id_dict[doc["disease"]]=doc["id"]
+    #取出最终的父块(带score)
+    res_doc_list = [doc for doc in lists if doc["id"] in list(disease_id_dict.values())]
+
+    #5，排序，第一层是病名统计数，第二层是score
+    res_doc_list.sort(key=lambda res_doc:(-disease_count_dict[res_doc["disease"]],res_doc["score"]))
+
+
     return res_doc_list
 
 #通过parent_ids就能找到带问题距离的docs
@@ -187,7 +193,6 @@ def get_doc_with_score_by_parent_id_list(parent_id_list: list[Any], question: st
     # 4.2调用相应函数组装带score的父块数据
     return find_parent_chuck_by_parent_id_scores(parent_id_score_dict)
 
-
 #通过ParentIds和score获取到数据库查询对应的父块
 def find_parent_chuck_by_parent_id_scores(best_score_parent_ids:dict)->list:
     #1,先将dict的key转换为list，批量查询父块。
@@ -203,21 +208,24 @@ def find_parent_chuck_by_parent_id_scores(best_score_parent_ids:dict)->list:
         res.append(execute_re_dict)
     return res
 
-#通过ParentIds到数据库查询对应的父块
-def find_parent_chuck_by_parent_id(parent_ids) -> list:
+#通过ParentIds到数据库查询对应的父块，同时按照传入的parentids顺序排序
+def find_parent_chuck_by_parent_ids(parent_ids) -> list:
+    #1,给parentids贴顺序号
+    id_index_dict_list = {id: index for index, id in enumerate(parent_ids)}
+
+    #2,执行查询
     with (engine.begin() as conn):
         execute_res = conn.execute(
             select(disease_parent_chuck_table).where(disease_parent_chuck_table.c.id.in_(parent_ids))
         ).mappings()
         res=[]
         for execute_re in execute_res:
+            #因为返回的是row-mapping对象，需要转化为py的dict
             res.append(dict(execute_re))
-    # 4，解析结果
+    # 3,按照传入顺序排序
+    res.sort(key=lambda re:id_index_dict_list[re["id"]])
     return res
 
 if __name__ == '__main__':
-    # retireve_by_embedding("缺氧")
-    keyword = retrieve_by_keyword("糖尿病是什么")
-    print(keyword)
-    # print("向量搜索",retireve_by_embedding("CVI是什么").all())
-    # print("关键词搜索",keyword_search("CVI是什么").all())
+    # retrieve_by_keyword("我怎么脑子发涨，浑身无力的呀！")
+    retrieve_by_knowledge_graph("我怎么脑子发涨，浑身无力的呀！")
