@@ -18,6 +18,7 @@ CASES_TEST_PATH=ROOT/"data"/"test"/"cases_test.jsonl"
 CASES_2_PATH=ROOT/"data"/"test"/"cases_level2.jsonl"
 CASES_3_PATH=ROOT/"data"/"test"/"cases_level3.jsonl"
 CASES_4_PATH=ROOT/"data"/"test"/"cases_level4.jsonl"
+CASES_SCORE_PATH=ROOT/"data"/"test"/"cases_score.jsonl"
 # CASES_PATH=ROOT/"data"/"test"/"make_up_disease.jsonl"
 
 
@@ -141,6 +142,7 @@ def cases_test(cases_path:Path):
                 })
 
 if __name__ == '__main__':
-    cases_test(CASES_SINGLE_PATH)
+    # cases_test(CASES_SINGLE_PATH)
     # cases_test(CASES_4_PATH)
     # cases_test(CASES_2_PATH)
+    cases_test(CASES_SCORE_PATH)

@@ -33,7 +33,7 @@ NODE_REFUSE_ANSWER = "refuse_answer_handler"
 NODE_FAST_ANSWER_HANDLER = "fast_answer_handler"
 NODE_FAST_ANSWER_JUDGER = "fast_answer_judger"
 NODE_INPUT_GREATER = "input_greater"
-
+NODE_INPUT_PRE_HANDLE = "input_pre_handle"
 
 
 danger_word_list= [

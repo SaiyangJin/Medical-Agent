@@ -9,7 +9,7 @@ import traceback
 from sqlalchemy.dialects.mysql import insert
 from src.service.user_chat_table_init import user_chat_request_table
 from src.parent_child_chunk.init_model import engine
-
+from src.langgraph_demo.init_logging import logger
 import time
 import uuid
 from src.langgraph_demo.langgraph_demo_graph_constant import (
@@ -20,7 +20,8 @@ from src.langgraph_demo.langgraph_demo_graph_constant import (
     NODE_HANDLE_RETRIEVE_RES, NODE_SEND_TO_LLM,
     NODE_POST_GUARDRAIL, NODE_REFUSE_ANSWER, ANSWER_STATUS_DANGER, danger_word_list,
     NODE_RETRIEVE_GRAPH, NODE_FAST_ANSWER_HANDLER, NODE_FAST_ANSWER_JUDGER, NODE_VALIDATE_ANSWER,
-    disease_list, NODE_INPUT_GREATER, common_disease_dict, alias_transport_white_list, whole_symptoms_list
+    disease_list, NODE_INPUT_GREATER, common_disease_dict, alias_transport_white_list, whole_symptoms_list,
+    NODE_INPUT_PRE_HANDLE
 )
 from src.parent_child_chunk.content_retrieve import retrieve_by_keyword, retrieve_by_embedding, retrieve_by_knowledge_graph
 from langchain_core.prompts import ChatPromptTemplate
@@ -62,10 +63,15 @@ class State(TypedDict):
     use_llm:bool #是否使用了大模型
     standard_top_level: int
     symptoms_list_in_question:list
+    text_symptom_dict_list:list
+    embedding_retrieval_status:bool
+    keyword_retrieval_status:bool
+    graph_retrieval_status:bool
+    refuse_answer:str
 
 #装饰器，记录节点耗时
 #因为graph药求传入的是一个函数，你这只是把fn替换成了time_recorder_wrapper，框架该传入state还是传入了state，包了一层而已
-def node_wrapper(fn):
+def node_wrapper(fn,fallback=None):
     def time_recorder_wrapper(state):
         start_time=datetime.datetime.now()
         error=None
@@ -73,9 +79,14 @@ def node_wrapper(fn):
         result=None
         try:
             result=fn(state)
-        except Exception as e:
-            error=str(traceback.format_exc())
-            raise Exception(error)
+        except Exception as ex:
+            #这个节点异常，如果有补偿函数，就调用补偿函数，异常降级
+            if fallback:
+                return fallback(state)
+            #如果没有，则说明异常不能降级，抛出系统错误
+            else:
+                error=str(traceback.format_exc())
+                raise ex
         finally:
             end_time = datetime.datetime.now()
             #两个相减是duration类，所以要提取出秒数
@@ -121,8 +132,33 @@ def safety_check_router(state:State):
 def danger_situation_handler(state:State):
     return {"answer": "您描述的情况是危险情况，需要紧急处理，请立即就医。","answer_status":ANSWER_STATUS_DANGER}
 
+#输入预处理函数，主要是提取出症状和转化的文本
+def input_pre_handle(state:State):
+    
+
+    symptoms_list_in_question=[]
+    text_symptom_dict_list=[]
+
+    if whole_symptoms_list:
+        #调用大模型获取结果
+        SYSTEM_PROMPT = ("请在如下用户的问题中提取出症状:" +"\n" + state["question"] + "\n"
+                         + ABSTRACT_SYMPTOM_PROMPT +','.join(whole_symptoms_list))
+        res = qwenModel.invoke(SYSTEM_PROMPT)
+
+        #提取到的症状如[{"text":"头昏沉沉的","symptom":"头晕"}]
+        # print("res提取到的症状",res.content)
+        text_symptom_dict_list = json.loads(res.content)
+
+        #如果res有结果那就狠狠的开始获取问题中的症状列表
+        if  text_symptom_dict_list:
+            symptoms_list_in_question=list(set([res["symptom"] for res in text_symptom_dict_list]))
+
+
+    return {"symptoms_list_in_question": symptoms_list_in_question, "text_symptom_dict_list": text_symptom_dict_list}
+
 #输入优化节点,输出优化后的问题
 def input_greater(state:State):
+    
     question = state['question']
     for alias in alias_transport_white_list:
         if alias in question:
@@ -175,41 +211,30 @@ def input_greater(state:State):
     #ij都是有效的下标
 
     #=============================PART2 症状词-专业名词转化================================
-    symptoms_list_in_question=[]
-    if whole_symptoms_list:
-        SYSTEM_PROMPT = ("请在如下用户的问题中提取出症状:" +"\n" + changed_question + "\n"
-                         + ABSTRACT_SYMPTOM_PROMPT +','.join(whole_symptoms_list))
-        res = qwenModel.invoke(SYSTEM_PROMPT)
+    text_symptom_dict_list=state["text_symptom_dict_list"]
+    #如果res有结果那就狠狠的开始替换原文,并获取问题中的症状列表
+    if  text_symptom_dict_list:
+        #替换原文，替换为专业的症状词
+        for text_symptom_dict in text_symptom_dict_list:
+            if text_symptom_dict["text"]:
+                changed_question=changed_question.replace(text_symptom_dict["text"],text_symptom_dict["symptom"])
 
-        #提取到的症状如[{"text":"头昏沉沉的","symptom":"头晕"}]
-        # print("res提取到的症状",res.content)
-
-        text_symptom_dict_list = json.loads(res.content)
-
-
-        #如果res有结果那就狠狠的开始替换原文,并获取问题中的症状列表
-        if  text_symptom_dict_list:
-            symptoms_list_in_question=list(set([res["symptom"] for res in text_symptom_dict_list]))
-            #替换原文，替换为专业的症状词
-            for text_symptom_dict in text_symptom_dict_list:
-                if text_symptom_dict["text"]:
-                    changed_question=changed_question.replace(text_symptom_dict["text"],text_symptom_dict["symptom"])
-
-
-
-    #返回结果
-    return {"changed_question":changed_question,"symptoms_list_in_question":symptoms_list_in_question}
+    return {"changed_question":changed_question}
 
 def retrieve_by_keyword_node(state:State):
-    return {"keyword_res":retrieve_by_keyword(state['changed_question'])}
+    
+    return {"keyword_res":retrieve_by_keyword(state['changed_question']),"keyword_retrieval_status":True}
 
 #第二条链路:向量检索
 def retrieve_by_embedding_node(state:State):
-    return {"embedding_res":retrieve_by_embedding(state['changed_question'],10)}
+    
+    return {"embedding_res":retrieve_by_embedding(state['changed_question'],10),"embedding_retrieval_status":True}
 
 #第三条链路:知识图谱检索
 def retrieve_by_knowledge_graph_node(state:State):
-    return {"graph_res": retrieve_by_knowledge_graph(state["changed_question"],state.get("symptoms_list_in_question",None))}
+    
+    return {"graph_res": retrieve_by_knowledge_graph(state["changed_question"],state.get("symptoms_list_in_question",None)),"graph_retrieval_status":True}
+
 
 #依据获取到的doc获取该证据的分数
 def get_score(doc,question:str)->int:
@@ -218,6 +243,10 @@ def get_score(doc,question:str)->int:
     return 1
 #处理检索结果,去重,拼贴info
 def handle_retrieve_res(state:State):
+    #0,如果三路都挂，直接维护一个refuse_answer
+    if not state.get("embedding_retrieval_status", True) and not state.get("keyword_retrieval_status",True) and not state.get("graph_retrieval_status",True):
+        return {"refuse_answer":"系统超时，请稍后再试","keyword_res":[],"graph_res":[],"info":"","finally_res":[],"file_nos":[]}
+
     #1,取出两个返回的结果
     embedding_res = state['embedding_res']
     keyword_res = state['keyword_res']
@@ -269,9 +298,6 @@ def handle_retrieve_res(state:State):
         nos.append(index+1)
         info+=f"\n\n[{index+1}]:【{text['disease']}-{text['title']}】{text['text']}\n\n"
     return {"keyword_res":temp_keyword_res,"graph_res":graph_res,"info":info,"finally_res":list_all,"file_nos":nos}
-
-
-
 
 #定义系统提示词，发送给大模型，取得结果
 def send_to_llm(state:State):
@@ -385,7 +411,7 @@ def validate_answer(state:State):
 
     if text== "IRRELEVANT_CONTENT":
         #TODO此处citation_status是什么仍待商榷
-        return {"citation_status": NO_CITATION,"answer_status":ANSWER_STATUS_REFUSE}
+        return {"citation_status": NO_CITATION,"answer_status":ANSWER_STATUS_REFUSE,"refuse_answer":"本问题超出了我的能力范围"}
     if not nums:
         return {"citation_status": NO_CITATION}
     if set([str(num) for num in set(nums)]) <= set([str(num) for num in set(nos)]):
@@ -407,7 +433,10 @@ def post_guardrail(state:State):
 
     #FastAnswer缓存，只有正常引用的回答才可以进缓存
     if state.get("redis_key") and state.get("citation_status") == NORMAL_CITATION:
-        redis_template.set(state["redis_key"], answer)
+        try:
+            redis_template.set(state["redis_key"], answer)
+        except Exception as e:
+            logger.error("FastAnswer缓存操作出错,错误信息:%s",traceback.format_exc())
 
     return {"answer": answer}
 
@@ -427,7 +456,7 @@ def validate_answer_router(state:State):
         return NODE_POST_GUARDRAIL
 
 def refuse_answer_handler(state:State):
-    return {"answer": "本问题超出了我的能力范围"}
+    return {"answer": state["refuse_answer"]}
 
 #工具函数，判断问题有没有关键词
 def abstract_question_keyword(question: str):
@@ -466,28 +495,56 @@ def fast_answer_judger(state:State):
     if not redis_template.exists(redis_key) or not redis_template.get(redis_key):
         return {"redis_key":redis_key}
     #如果存在，维护一个fast_answer
-    print("使用了缓存")
     return {"fast_answer": redis_template.get(redis_key),"redis_key":redis_key}
 
 def fast_answer_router(state:State):
     if state.get("fast_answer", None):
         #如果有fast_answer，走NODE_FAST_ANSWER
         return NODE_FAST_ANSWER_HANDLER
-    return NODE_INPUT_GREATER
+    return NODE_INPUT_PRE_HANDLE
+
+#处理完结果的路由，如果三路都挂，那就拒答
+def res_handle_router(state:State):
+    if state.get("refuse_answer", None):
+        return NODE_REFUSE_ANSWER
+    return NODE_SEND_TO_LLM
 
 
 #如果要快速回答,要给answer生成一些什么
 def fast_answer_handler(state:State):
     return {"answer": state["fast_answer"],"answer_status":ANSWER_STATUS_NORMAL}
 
+#================================异常降级：补偿函数区=================================
+def input_pre_handle_fall_back(state:State):
+    logger.error("输入预处理函数出错,错误信息:%s",traceback.format_exc())
+    return {"symptoms_list_in_question": [], "text_symptom_dict_list": []}
 
+def input_greater_fall_back(state:State):
+    logger.error("输入优化节点出错,错误信息:%s",traceback.format_exc())
+    return {"changed_question":state["question"]}
+
+def embedding_fall_back(state:State):
+    logger.error("向量检索节点出错,错误信息:%s",traceback.format_exc())
+    return {"embedding_retrieval_status":False,"embedding_res":[]}
+
+def keyword_fall_back(state:State):
+    logger.error("关键词检索节点出错,错误信息:%s",traceback.format_exc())
+    return {"keyword_retrieval_status":False,"keyword_res":[]}
+
+def graph_fall_back(state:State):
+    logger.error("知识图谱检索节点出错,错误信息:%s",traceback.format_exc())
+    return {"graph_retrieval_status":False,"graph_res":[]}
+
+def fast_answer_fall_back(state:State):
+    logger.error("快速回答节点出错,错误信息:%s",traceback.format_exc())
+    return {"fast_answer": None,"redis_key":None}
 #整个建图流程：
 # 1，根据START创建图
 graph = StateGraph(State)
 #2，增加所有节点
-graph.add_node(NODE_RETRIEVE_KEYWORD,    node_wrapper(retrieve_by_keyword_node))
-graph.add_node(NODE_RETRIEVE_EMBEDDING,  node_wrapper(retrieve_by_embedding_node))
-graph.add_node(NODE_RETRIEVE_GRAPH,      node_wrapper(retrieve_by_knowledge_graph_node))
+graph.add_node(NODE_RETRIEVE_KEYWORD,    node_wrapper(retrieve_by_keyword_node,keyword_fall_back))
+graph.add_node(NODE_RETRIEVE_EMBEDDING,  node_wrapper(retrieve_by_embedding_node,embedding_fall_back))
+graph.add_node(NODE_RETRIEVE_GRAPH,      node_wrapper(retrieve_by_knowledge_graph_node,graph_fall_back))
 graph.add_node(NODE_SEND_TO_LLM,         node_wrapper(send_to_llm))
 graph.add_node(NODE_SAFETY_CHECK,        node_wrapper(safety_check))
 graph.add_node(NODE_HANDLE_RETRIEVE_RES, node_wrapper(handle_retrieve_res))
@@ -496,8 +553,10 @@ graph.add_node(NODE_POST_GUARDRAIL,      node_wrapper(post_guardrail))
 graph.add_node(NODE_DANGER_HANDLER,      node_wrapper(danger_situation_handler))
 graph.add_node(NODE_REFUSE_ANSWER,       node_wrapper(refuse_answer_handler))
 graph.add_node(NODE_FAST_ANSWER_HANDLER, node_wrapper(fast_answer_handler))
-graph.add_node(NODE_FAST_ANSWER_JUDGER, node_wrapper(fast_answer_judger))
-graph.add_node(NODE_INPUT_GREATER, node_wrapper(input_greater))
+graph.add_node(NODE_FAST_ANSWER_JUDGER, node_wrapper(fast_answer_judger,fast_answer_fall_back))
+graph.add_node(NODE_INPUT_GREATER, node_wrapper(input_greater,input_greater_fall_back))
+graph.add_node(NODE_INPUT_PRE_HANDLE, node_wrapper(input_pre_handle,input_pre_handle_fall_back))
+
 #3，增加所有边
 #紧急情况检查优先
 graph.add_edge(START, NODE_SAFETY_CHECK)
@@ -506,7 +565,7 @@ graph.add_edge(START, NODE_SAFETY_CHECK)
 graph.add_conditional_edges(NODE_SAFETY_CHECK, safety_check_router)
 graph.add_conditional_edges(NODE_FAST_ANSWER_JUDGER, fast_answer_router)
 
-
+graph.add_edge(NODE_INPUT_PRE_HANDLE,NODE_INPUT_GREATER)
 #4，尾部连接
 graph.add_edge(NODE_INPUT_GREATER,NODE_RETRIEVE_KEYWORD)
 graph.add_edge(NODE_INPUT_GREATER,NODE_RETRIEVE_EMBEDDING)
@@ -515,7 +574,7 @@ graph.add_edge(NODE_RETRIEVE_KEYWORD,    NODE_HANDLE_RETRIEVE_RES)
 graph.add_edge(NODE_RETRIEVE_EMBEDDING,  NODE_HANDLE_RETRIEVE_RES)
 graph.add_edge(NODE_RETRIEVE_GRAPH,      NODE_HANDLE_RETRIEVE_RES)
 
-graph.add_edge(NODE_HANDLE_RETRIEVE_RES, NODE_SEND_TO_LLM)
+graph.add_conditional_edges(NODE_HANDLE_RETRIEVE_RES, res_handle_router)
 graph.add_edge(NODE_SEND_TO_LLM,         NODE_VALIDATE_ANSWER)
 
 #如果资料编号有错误，send_to_llm，如果资料编号没有错误，到post_guardrail处理,如果没有引用编号，拒绝回答

@@ -26,14 +26,16 @@ embeddingModel = OpenAIEmbeddings(base_url="https://ws-8v7hg43jappdrllz.cn-beiji
                                   model="text-embedding-v4",
                                   api_key=os.environ.get("DASHSCOPE_API_KEY")
                                   ,check_embedding_ctx_length=False
-                                  ,chunk_size=10)#单次请求最多20次
+                                  ,chunk_size=10#单次请求最多20次
+                                  ,timeout=300)
 #制造向量数据库操作对象
 pg_vector = PGVector(embeddingModel,
                      connection=DATA_BASE_URL,
                      collection_name="disease-child-chuck",
                      use_jsonb=True,
+
                      # pre_delete_collection=True #插入之前先删表的元素（开发阶段）
                      )
 #创建大语言模型
 qwenModel = ChatOpenAI(base_url="https://ws-8v7hg43jappdrllz.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-                       model="qwen3.7-plus-2026-05-26", api_key=os.environ.get("DASHSCOPE_API_KEY"))
+                       model="qwen3.7-plus-2026-05-26", api_key=os.environ.get("DASHSCOPE_API_KEY"),timeout=300)
