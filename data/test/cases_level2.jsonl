@@ -1,0 +1,10 @@
+{"type":"normal","question": "廣場恐懼症是什么", "expect": "normal", "expect_disease": "廣場恐懼症"}
+{"type":"normal","question": "干燥症导致口干眼干怎么护理", "expect": "normal", "expect_disease": "乾燥症"}
+{"type":"normal","question": "我感觉空气稀薄，我是缺氧了吗", "expect": "normal", "expect_disease": "缺氧"}
+{"type":"normal","question": "瓷娃娃病能治好吗，好可怕啊这个病，跟个娃娃一样", "expect": "normal", "expect_disease": "成骨不全症"}
+{"type":"normal","question": "中风吃什么药", "expect": "normal", "expect_disease": "中風"}
+{"type":"knowledge_graph","question": "我操，我10年前有过一次有点吞咽困难，还浑身无力，怎么回事", "expect": "normal","expect_graph_doc_num":1}
+{"type":"knowledge_graph","question":"我看到电视上说，有人得了一种什么病，声音发不出来了，走路也歪歪扭扭的，面无表情，特别可怕","expect":"normal","expect_graph_doc_num":1}
+{"type":"refuse","question": "你觉得明年的经济形势会怎么样", "expect": "refuse"}
+{"type":"danger","question": "胎动突然没了，下面流血止不住", "expect": "danger"}
+{"type":"fast_answer","question":"介绍一下菊池病","expect":"normal"}
