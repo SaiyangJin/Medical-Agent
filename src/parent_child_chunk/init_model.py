@@ -1,4 +1,5 @@
 #导入环境变量包
+import asyncio
 import os
 
 
@@ -38,4 +39,10 @@ pg_vector = PGVector(embeddingModel,
                      )
 #创建大语言模型
 qwenModel = ChatOpenAI(base_url="https://ws-8v7hg43jappdrllz.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-                       model="qwen3.7-plus-2026-05-26", api_key=os.environ.get("DASHSCOPE_API_KEY"),timeout=300)
+                       model="qwen-plus-2025-12-01", api_key=os.environ.get("DASHSCOPE_API_KEY"),timeout=300)
+
+async def stream():
+    async for chuck in qwenModel.astream("菊池病是什么"):
+        print(chuck.content,end="")
+if __name__ == '__main__':
+    asyncio.run(stream())

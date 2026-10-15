@@ -14,13 +14,13 @@ threshold_p95_timeout=90.0 #最长不能超过90s，就是说就算超时率达�
 
 with (engine.begin() as conn):
     #1,先取出最近一次测试的run_id
-    run_id = conn.execute(select(request_table.c.run_id)
+    default_run_id = conn.execute(select(request_table.c.run_id)
                           .order_by(request_table.c.create_time.desc())
                           #默认升序，需要降序，取最新的
                           .limit(1)).scalar()
     #预定义run_id语句，因为都需要这个的
 
-def indicator_test(run_id:str=run_id)->list[str]:
+def indicator_test(run_id:str=default_run_id)->list[str]:
     with (engine.begin() as conn):
         if conn.execute(select(request_table)).first() is None:
             return ["测试数据为空,请先运行测试！"]

@@ -322,7 +322,7 @@ if __name__ == '__main__':
         console.print("")
         console.print("[1]最近一批测试")
         console.print("[2]指定一批测试(手动输入run_id)")
-        console.print("[3]查看特定请求(手动输入trace_id)")
+        console.print("[3]查看特定请求(手动输3入trace_id)")
         console.print("[4]退出")
         console.print("")
         choice=Prompt.ask("请选择(默认选择1)",choices=['1','2','3','4'],default='1')

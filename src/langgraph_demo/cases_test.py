@@ -1,3 +1,4 @@
+import asyncio
 import traceback
 from pathlib import Path
 import datetime
@@ -22,7 +23,7 @@ CASES_SCORE_PATH=ROOT/"data"/"test"/"cases_score.jsonl"
 # CASES_PATH=ROOT/"data"/"test"/"make_up_disease.jsonl"
 
 
-def cases_test(cases_path:Path):
+async def  cases_test(cases_path:Path):
     #预操作：把redis清空
     redis_template.flushall()
 
@@ -46,11 +47,8 @@ def cases_test(cases_path:Path):
             try:
                 #调用llm获取到最终的结果
                 start_time = datetime.datetime.now()
-                state=graph.invoke({"question": question, "trace_id": str(uuid.uuid4())})
+                state=await graph.ainvoke({"question": question, "trace_id": str(uuid.uuid4())})
 
-                citation_status= state["citation_status"]
-                print("=======================引用状态======================\n", citation_status)
-                print("=======================引用状态======================\n")
 
                 #先判断status是否一致，不一致直接标记bad-case。
                 question_type=line_dict.get("type")
@@ -74,7 +72,7 @@ def cases_test(cases_path:Path):
                                 break
                 if question_type=="normal" and rank==-1:
                     #找不到对应疾病，标记bad-case
-                    bad_case_reason += f"资料中找不到对应疾病{expect_disease}\n"
+                    bad_case_reason += f"没有检索到期待疾病{expect_disease}\n"
                 if question_type== "knowledge_graph":
                     #t1知识图谱类型
                     #t1.1先判断expect_disease在不在资料里面
@@ -131,7 +129,7 @@ def cases_test(cases_path:Path):
                     "passed": bad_case_reason=="",#不是bad_case才能通过
                     "trace_id":state['trace_id'],#一次请求一个trace_id
                     "run_id": run_id,#这批的id，用于统计通过率
-                    "citation_status": state.get("citation_status"),#引用状态,有"NO_CITATION,NORMAL_CITATION,ERROR_CITATION"
+                    "citation_status": state.get("citation_status",None),#引用状态,有"NO_CITATION,NORMAL_CITATION,ERROR_CITATION"
                     "fail_reason":  bad_case_reason,
                     "rank":rank,#如果是-1，那就说明没有找到对应疾病
                     "create_time": start_time,
@@ -142,7 +140,9 @@ def cases_test(cases_path:Path):
                 })
 
 if __name__ == '__main__':
-    # cases_test(CASES_SINGLE_PATH)
+    # asyncio.run(cases_test(CASES_SINGLE_PATH))
+    asyncio.run(cases_test(CASES_PATH))
+    # asyncio.run(cases_test(CASES_2_PATH))
     # cases_test(CASES_4_PATH)
-    # cases_test(CASES_2_PATH)
-    cases_test(CASES_SCORE_PATH)
+    # asyncio.run(cases_test(CASES_SCORE_PATH))
+

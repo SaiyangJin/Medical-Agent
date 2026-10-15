@@ -3,6 +3,8 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/LangChain-Medical-Agent.iml" filepath="$PROJECT_DIR$/LangChain-Medical-Agent.iml" />
+      <module fileurl="file://$PROJECT_DIR$/front_end/front_end.iml" filepath="$PROJECT_DIR$/front_end/front_end.iml" />
+      <module fileurl="file://$PROJECT_DIR$/untitled/untitled.iml" filepath="$PROJECT_DIR$/untitled/untitled.iml" />
     </modules>
   </component>
 </project>

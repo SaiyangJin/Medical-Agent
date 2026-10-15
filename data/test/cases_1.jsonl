@@ -1,1 +1,1 @@
-{"type":"danger","question":"我老公刚才吐了一大口血，人都软了","expect":"danger"}
+{"type":"normal","question":"就是身体受到重创后，血液循环系统突然供血不足，导致全身细胞缺氧挨饿。这会引发连锁反应，造成各个重要器官代谢失常、功能受损甚至结构破坏，是一种危及生命的全身性病变，以上描述对应什么疾病？","expect":"normal","expect_disease":"休克"}
