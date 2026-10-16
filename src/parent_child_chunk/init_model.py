@@ -34,12 +34,13 @@ pg_vector = PGVector(embeddingModel,
                      connection=DATA_BASE_URL,
                      collection_name="disease-child-chuck",
                      use_jsonb=True,
-
                      # pre_delete_collection=True #插入之前先删表的元素（开发阶段）
                      )
 #创建大语言模型
 qwenModel = ChatOpenAI(base_url="https://ws-8v7hg43jappdrllz.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-                       model="qwen-plus-2025-12-01", api_key=os.environ.get("DASHSCOPE_API_KEY"),timeout=300)
+                       model="qwen-plus", api_key=os.environ.get("DASHSCOPE_API_KEY"),timeout=300)
+backupQwenModel = ChatOpenAI(base_url="https://ws-8v7hg43jappdrllz.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+                       model="qwen-max", api_key=os.environ.get("DASHSCOPE_API_KEY"),timeout=300)
 
 async def stream():
     async for chuck in qwenModel.astream("菊池病是什么"):

@@ -86,8 +86,8 @@ async def  cases_test(cases_path:Path):
                     #     bad_case_reason += f"期待的病症{expect_disease}不在知识图谱查到的资料里边;\n"
                 if question_type== "fast_answer":
                     #t2快速回答类型
-                    #t2.0先跑一遍模型
-                    state_again=graph.invoke({"question": question, "trace_id": str(uuid.uuid4())})
+                    #t2.0再跑一遍，这次要使用缓存了
+                    state_again=await graph.ainvoke({"question": question, "trace_id": str(uuid.uuid4())})
                     #t2.1判断是否跑了大模型
                     if state_again.get("use_llm", False):
                         bad_case_reason += f"调用了大模型，但Fast_Answer类型期待不使用大模型\n"

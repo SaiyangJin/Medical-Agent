@@ -179,4 +179,4 @@ def indicator_test(run_id:str=default_run_id)->list[str]:
     #檢查每一個指標，如果有一個不過那就維護狀態機is_passed，加入不过列表
 
 if __name__ == '__main__':
-    indicator_test("618dd009-6adc-4fe1-8e2a-6b01214dc999")
+    indicator_test("c3cf7ff5-a60e-4e39-b3b0-b832eafb1863")

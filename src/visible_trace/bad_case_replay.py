@@ -120,7 +120,7 @@ def print_one_request_trace(trace_id:str):
 
     while True:
         #按任意键继续
-        console.print("按任意键继续...")
+        console.print("按任意键继续(可能有下一条请求)...")
         console.input()
         break
 
@@ -186,6 +186,7 @@ def print_all_not_passed_request(run_id:str):
         console.print("以下是详细链路调用:\n")
         print_one_request_trace(str(res.trace_id))
 
+
 def print_all_not_passed_system_error_request(run_id:str):
     #2.3.1，先找到最近一次run_id的所有评测数据
     with (engine.begin() as conn):
@@ -193,6 +194,7 @@ def print_all_not_passed_system_error_request(run_id:str):
                                               ,request_table.c.is_system_error==True
                                               ,request_table.c.passed==False)
         execute_res_all = conn.execute(pre_sql).all()
+        print("有几条数据,", len(execute_res_all))
     #2.3.2找到not-passed的数据，打印出不过理由，然后是整条链路的打印
     #一个请求用表格类型打印吧。
     for index,res in enumerate(execute_res_all):
