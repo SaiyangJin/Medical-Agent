@@ -1,0 +1,54 @@
+name: langchain-medical-agent
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: medical-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: "123456"
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - D:/AppData/medical-agent/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  neo4j:
+    image: neo4j:5
+    container_name: medical-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/neo4j114514
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - D:/AppData/medical-agent/neo4j/data:/data
+      - D:/AppData/medical-agent/neo4j/logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p neo4j114514 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+  redis:
+    image: redis:7.4
+    container_name: medical-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "123456", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - D:/AppData/medical-agent/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "123456", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
