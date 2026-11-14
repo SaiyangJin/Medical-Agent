@@ -51,10 +51,10 @@ async def  cases_test(cases_path:Path):
 
                 # 编辑配置：传入线程id
                 thread_id=str(uuid.uuid4())
-                config={"configurable":{"thread_id":thread_id}}
+                # config={"configurable":{"thread_id":thread_id}}
 
                 # 传入当前线程的Config，这样就可以启动断点重放了
-                state=await graph.ainvoke({"question": question, "trace_id": trace_id}, config)
+                state=await graph.ainvoke({"question": question, "trace_id": trace_id})
 
                 #先判断status是否一致，不一致直接标记bad-case。
                 question_type=line_dict.get("type")
@@ -93,7 +93,7 @@ async def  cases_test(cases_path:Path):
                 if question_type== "fast_answer":
                     #t2快速回答类型
                     #t2.0再跑一遍，这次要使用缓存了
-                    state_again=await graph.ainvoke({"question": question, "trace_id": str(uuid.uuid4())},config)
+                    state_again=await graph.ainvoke({"question": question, "trace_id": str(uuid.uuid4())})
                     #t2.1判断是否跑了大模型
                     if state_again.get("use_llm", False):
                         bad_case_reason += f"调用了大模型，但Fast_Answer类型期待不使用大模型\n"
@@ -147,8 +147,9 @@ async def  cases_test(cases_path:Path):
 
 if __name__ == '__main__':
     # asyncio.run(cases_test(CASES_SINGLE_PATH))
-    asyncio.run(cases_test(CASES_PATH))
+    # asyncio.run(cases_test(CASES_SINGLE_PATH)) #启动事件循环，就是启动异步调用
+    # asyncio.run(cases_test(CASES_PATH))
     # asyncio.run(cases_test(CASES_2_PATH))
-    # cases_test(CASES_4_PATH)
+    asyncio.run(cases_test(CASES_4_PATH))
     # asyncio.run(cases_test(CASES_SCORE_PATH))
 

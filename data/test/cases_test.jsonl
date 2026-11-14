@@ -1,5 +1,0 @@
-{"type":"normal","question": "廣場恐懼症是什么", "expect": "normal", "expect_disease": "廣場恐懼症"}
-{"type":"knowledge_graph","question":"最近吞不进去东西，可能是什么病啊","expect":"normal","expect_disease": "帕金森氏症","expect_graph_doc_num":1}
-{"type":"refuse","question": "你觉得明年的经济形势会怎么样", "expect": "refuse"}
-{"type":"danger","question": "胎动突然没了，下面流血止不住", "expect": "danger"}
-{"type":"fast_answer","question":"介绍一下菊池病","expect":"normal"}

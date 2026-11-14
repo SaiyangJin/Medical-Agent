@@ -4,11 +4,7 @@ import pypinyin
 import re
 import traceback
 
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.types import RetryPolicy
-from openai import timeout
-from psycopg_pool import ConnectionPool
 from pydantic import BaseModel
 from src.langgraph_demo.init_redis import redis_template
 from src.parent_child_chunk.content_retrieve_constant import ABSTRACT_SYMPTOM_PROMPT
@@ -471,15 +467,20 @@ async def send_to_llm(state:State, runnableConfig:RunnableConfig):
     if state.get("citation_status", NORMAL_CITATION)==ERROR_CITATION:
         info+="\n\n[系统提示]注意，你出现了幻觉，引用了不存在的资料编号，请纠正"
 
-    res_buffer=[]
-    #chain才能传入dict，因为chain能填入占位符，普通model只能传个字符串了
-    async_res = chain.astream({"info": info, "changed_question": changed_question}, config=runnableConfig)
-    #相当于在每次都await等待res
-    async for res in async_res:
-        if res.content:
-            res_buffer+=res.content
-    #使用了大模型
-    answer = "".join(res_buffer)
+    #5，如果retry_count==0，那就走流式，如果retry_count!=0，那就走非流式
+    if not state.get('retry_count', 0):
+        res_buffer=[]
+        #chain才能传入dict，因为chain能填入占位符，普通model只能传个字符串了
+        async_res = chain.astream({"info": info, "changed_question": changed_question}, config=runnableConfig)
+        #相当于在每次都await等待res
+        async for res in async_res:
+            if res.content:
+                res_buffer+=res.content
+        #使用了大模型
+        answer = "".join(res_buffer)
+    else:
+        answer = await chain.ainvoke({"info": info, "changed_question": changed_question}, config=runnableConfig)
+
     #到了这个节点，就是没有缓存，存入redis
     return {"answer":  answer,
             "retry_count": state.get('retry_count', 0) + 1,
@@ -677,18 +678,8 @@ graph.add_edge(NODE_DANGER_HANDLER, NODE_POST_GUARDRAIL)
 graph.add_edge(NODE_FAST_ANSWER_HANDLER, END)
 graph.add_edge(NODE_POST_GUARDRAIL, END)
 
-#5,编译的时候带上 checkPointer 配置，启动检查点，传入langgraph包里的检查点
-
-#这边采用数据库检查点，因为刚好有pg，持久化保存控制流状态
-
-DB_URI = DATA_BASE_URL.replace("postgresql+psycopg://", "postgresql://") #不用psycpg翻译，直接纯postgre即可
-_pool = ConnectionPool(conninfo=DB_URI, max_size=10) #连接池
-_checkpointer  = PostgresSaver(_pool)
-_checkpointer.setup() #建表幂等
-
 builder=graph #未编译的图
-graph=graph.compile(checkpointer=_checkpointer)
-#后面重试的时候就可以从检查点开始了。
+graph=graph.compile()
 
 
 

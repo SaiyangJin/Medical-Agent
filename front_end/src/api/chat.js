@@ -1,39 +1,45 @@
 import {axiosInstance} from "../axios/axios.js";
 
-export const chatApi=async(question)=>{
+export const chatApi=async(question, threadId = crypto.randomUUID())=>{
     return await axiosInstance.post("/api/chat", {
-        "question": question
+        "question": question,
+        "thread_id": threadId
     })
 }
 
 
-export async function* getStreamChatApi(question) {
-    const res =await fetch("/api/chat", {
+export async function* getStreamChatApi(question, threadId = crypto.randomUUID(), signal, endpoint = "/api/chat") {
+    //应该是在抓取数据
+    const res =await fetch(endpoint, {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            "question": question
-        })
+            "question": question,
+            "thread_id": threadId
+        }),
+        signal,   // AbortController 的中止信号，调用 controller.abort() 会中断这次请求
     });
-    //文本编码器
     const textDecoder = new TextDecoder();
-    //读取器
     const reader = res.body.getReader();
-    //一直读取流，直到结束
-    let text = ""
+    let buffer = "";
+    //开始循环读取数据,直到done
     while (true) {
-        //读取到res里面的done标识(reader.read())，和value值
-        const {done, value} = await reader.read()//异步读，卡住，但是可以去做别的事情
-        //如果done了，直接break
-        if (done) {
-            break
-        }
-        //不然就不断添加text,yield返回这个值
+        const {done, value} = await reader.read();
+        if (done) break;
+        // stream:true 防止中文多字节字符跨 chunk 被切成乱码
+        buffer += textDecoder.decode(value, { stream: true });
 
-        yield parseOneMessage(textDecoder.decode(value))
+        let idx;
+        //获取的文本段按照 "\n\n" 分割
+        while ((idx = buffer.indexOf("\n\n")) !== -1) {
+            const raw = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            yield parseOneMessage(raw);
+        }
     }
+    if (buffer.trim()) yield parseOneMessage(buffer);
 }
 
 const parseOneMessage=(message)=>{
@@ -46,7 +52,8 @@ const parseOneMessage=(message)=>{
             //提取出子串，slice(开始位置，结束位置)
              data += JSON.parse(chunk.slice(6));
         }else if(chunk.startsWith("event: ")){
-            event = chunk.slice(6);
+            // "event: " 是 7 个字符（含冒号后的空格），slice(6) 会切出 " done"
+            event = chunk.slice(7);
         }
     }
     return {event,data}

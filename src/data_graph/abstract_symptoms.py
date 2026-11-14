@@ -9,8 +9,8 @@ from src.data_graph.neo4j_init import neo4j_driver
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_PATH = ROOT / "data" / "chunk" / "parent.jsonl"
 ABSTRACT_OUTPUT_PATH = ROOT / "data" / "graph" / "abstract_output.jsonl"
-
 AFTER_HANDLE_DATA_PATH = ROOT / "data" / "graph" / "after_handle.jsonl"
+
 def save_abstracted_data():
     #拿到抽取的数据
     with open(AFTER_HANDLE_DATA_PATH,'r',encoding="utf-8") as f:
@@ -136,5 +136,5 @@ def abstract() :
     # return res
 
 if __name__ == '__main__':
-    # abstract()
-    save_abstracted_data()
+    abstract()
+    # save_abstracted_data()

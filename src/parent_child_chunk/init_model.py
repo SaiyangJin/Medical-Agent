@@ -24,7 +24,7 @@ engine = create_engine(DATA_BASE_URL)
 load_dotenv(ROOT / '.env')
 #创建向量化模型
 embeddingModel = OpenAIEmbeddings(base_url="https://ws-8v7hg43jappdrllz.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-                                  model="text-embedding-v4",
+                                  model="qwen3.7-text-embedding-flash",
                                   api_key=os.environ.get("DASHSCOPE_API_KEY")
                                   ,check_embedding_ctx_length=False
                                   ,chunk_size=10#单次请求最多20次
@@ -32,15 +32,15 @@ embeddingModel = OpenAIEmbeddings(base_url="https://ws-8v7hg43jappdrllz.cn-beiji
 #制造向量数据库操作对象
 pg_vector = PGVector(embeddingModel,
                      connection=DATA_BASE_URL,
-                     collection_name="disease-child-chuck",
+                     collection_name="disease_child_chuck",
                      use_jsonb=True,
                      # pre_delete_collection=True #插入之前先删表的元素（开发阶段）
                      )
 #创建大语言模型
 qwenModel = ChatOpenAI(base_url="https://ws-8v7hg43jappdrllz.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-                       model="qwen-plus", api_key=os.environ.get("DASHSCOPE_API_KEY"),timeout=300)
+                       model="kimi-k3.1-pro", api_key=os.environ.get("DASHSCOPE_API_KEY"),timeout=300000)
 backupQwenModel = ChatOpenAI(base_url="https://ws-8v7hg43jappdrllz.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-                       model="qwen-max", api_key=os.environ.get("DASHSCOPE_API_KEY"),timeout=300)
+                       model="kimi-k3.1-pro", api_key=os.environ.get("DASHSCOPE_API_KEY"),timeout=300000)
 
 async def stream():
     async for chuck in qwenModel.astream("菊池病是什么"):

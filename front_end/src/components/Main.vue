@@ -14,35 +14,97 @@ const examples = [
   '中風和脑积水都会引起认知障碍，有什么区别',
 ]
 
+// 当前请求的中止控制器；只有生成中才不为 null
+let controller = null
+
 async function send(text) {
   const q = (text ?? input.value).trim()
   if (!q || loading.value) return
 
+  // 每次新对话生成一个新 thread_id；重试时可以复用消息里存的那个
+  const threadId = crypto.randomUUID()
+
   messages.value.push({ role: 'user', content: q })
   input.value = ''
   loading.value = true
+  controller = new AbortController()
+  scrollToBottom()
+
+  // index 提到 try 外面：catch 里处理"已停止"时还要用它
+  let index = -1
+  try {
+    messages.value.push({ role: 'ai', content: '', threadId, question: q })
+    //然後想要修改的话，那就必须修改messages列表里面的东西了
+    index = messages.value.length - 1
+
+    let finalAnswer = ''
+    for await (const {event,data} of getStreamChatApi(q, threadId, controller.signal)){
+      if(event==="done"){
+        finalAnswer = data
+      } else {
+        messages.value[index].content += data
+      }
+    }
+    if(finalAnswer){
+      messages.value[index].content = finalAnswer
+    }
+  } catch (e){
+    if (e.name === 'AbortError') {
+      // 用户点了停止：保留已生成的内容，标记为可重试
+      if (index >= 0) {
+        messages.value[index].content += '\n\n（已停止）'
+        messages.value[index].stopped = true
+      }
+    } else {
+      console.log(e)
+      // 拦截器已经弹过气泡了，这里只补个占位，免得用户以为卡死
+      messages.value.push({ role: 'ai', content: '（请求失败，请看上方提示）' })
+    }
+  } finally {
+    controller = null
+    loading.value = false
+    scrollToBottom()
+  }
+}
+
+// 停止生成：中断 fetch，后端会收到连接断开，图在最后一个完成的节点处停下
+function stop() {
+  controller?.abort()
+}
+
+// 重试：用同一个 thread_id 调 /retry，后端从最后一个完成的节点继续
+async function retry(index) {
+  const msg = messages.value[index]
+  if (!msg?.threadId || !msg?.question || loading.value) return
+
+  msg.content = ''
+  msg.stopped = false
+  loading.value = true
+  controller = new AbortController()
   scrollToBottom()
 
   try {
-    let text = ''
-    messages.value.push({ role: 'ai', content: text })
-    //然後想要修改的话，那就必须修改messages列表里面的东西了
-    let index = messages.value.length - 1
-    for await (const {event,data} of getStreamChatApi(q)){
-      // console.log("本次事件",event,"本次data",data)
-      console.log("本次事件",event,"本次data",data)
+    let finalAnswer = ''
+    for await (const {event,data} of getStreamChatApi(msg.question, msg.threadId, controller.signal, "/api/retry")){
       if(event==="done"){
-        text=data
-      }
-      else{
-        messages.value[index].content+=data
+        finalAnswer = data
+      } else {
+        msg.content += data
       }
     }
+    if(finalAnswer){
+      msg.content = finalAnswer
+    }
   } catch (e){
-    console.log(e)
-    // 拦截器已经弹过气泡了，这里只补个占位，免得用户以为卡死
-    messages.value.push({ role: 'ai', content: '（请求失败，请看上方提示）' })
+    if (e.name === 'AbortError') {
+      msg.content += '\n\n（已停止）'
+      msg.stopped = true
+    } else {
+      console.log(e)
+      msg.content += '\n\n（重试失败）'
+    }
   } finally {
+    controller = null
     loading.value = false
     scrollToBottom()
   }
@@ -96,21 +158,25 @@ function scrollToBottom() {
         </div>
 
         <!-- 消息气泡 -->
-        <div
-          v-for="(m, i) in messages"
-          :key="i"
-          class="flex"
-          :class="m.role === 'user' ? 'justify-end' : 'justify-start'"
-        >
+        <template v-for="(m, i) in messages" :key="i">
           <div
-            class="max-w-[80%] rounded-2xl px-4 py-3 whitespace-pre-wrap leading-relaxed"
-            :class="m.role === 'user'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white text-slate-800 border border-slate-200'"
+            class="flex"
+            :class="m.role === 'user' ? 'justify-end' : 'justify-start'"
           >
-            {{ m.content }}
+            <div
+              class="max-w-[80%] rounded-2xl px-4 py-3 whitespace-pre-wrap leading-relaxed"
+              :class="m.role === 'user'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-slate-800 border border-slate-200'"
+            >
+              {{ m.content }}
+            </div>
           </div>
-        </div>
+          <!-- 只有被手动停止的回答才显示重试 -->
+          <div v-if="m.role === 'ai' && m.stopped" class="flex justify-start -mt-3">
+            <el-button size="small" @click="retry(i)">重试</el-button>
+          </div>
+        </template>
 
         <!-- 加载中 -->
         <div v-if="loading" class="flex justify-start">
@@ -136,7 +202,10 @@ function scrollToBottom() {
             placeholder="描述你的症状，或问某个疾病…（Enter 发送，Shift+Enter 换行）"
             @keydown="onKeydown"
           />
-          <el-button type="primary" size="large" :loading="loading" @click="send()">
+          <el-button v-if="loading" type="danger" size="large" @click="stop">
+            停止
+          </el-button>
+          <el-button v-else type="primary" size="large" @click="send()">
             发送
           </el-button>
         </div>

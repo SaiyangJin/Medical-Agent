@@ -12,7 +12,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - D:/AppData/medical-agent/postgres:/var/lib/postgresql/data
+      - medical_agent_postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U root -d postgres"]
       interval: 5s
@@ -29,8 +29,8 @@ services:
       - "7474:7474"
       - "7687:7687"
     volumes:
-      - D:/AppData/medical-agent/neo4j/data:/data
-      - D:/AppData/medical-agent/neo4j/logs:/logs
+      - medical_agent_neo4j_data:/data
+      - medical_agent_neo4j_logs:/logs
     healthcheck:
       test: ["CMD-SHELL", "cypher-shell -u neo4j -p neo4j114514 'RETURN 1' || exit 1"]
       interval: 10s
@@ -46,9 +46,15 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - D:/AppData/medical-agent/redis:/data
+      - medical_agent_redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "123456", "ping"]
       interval: 5s
       timeout: 3s
       retries: 20
+
+volumes:
+  medical_agent_postgres:
+  medical_agent_neo4j_data:
+  medical_agent_neo4j_logs:
+  medical_agent_redis:

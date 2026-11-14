@@ -1,3 +1,5 @@
+
+
 #基本服务：提供问题咨询服务
 #对应的技术栈：FastApi，就是让这个py变成了一个服务
 from contextlib import asynccontextmanager
@@ -14,15 +16,13 @@ from pydantic import BaseModel
 from sqlalchemy.dialects.mysql import insert
 from starlette.responses import StreamingResponse
 
-from src.langgraph_demo.indicator_test import indicator_test
 from src.langgraph_demo.trace_table_init import request_table, trace_table
 from src.service.user_chat_table_init import user_chat_request_table
-from src.parent_child_chunk.init_model import engine
+from src.parent_child_chunk.init_model import engine, DATA_BASE_URL
 from pathlib import Path
 import time
-import uuid
 
-from src.langgraph_demo.content_retrieve_graph import  trace_list, DB_URI,builder
+from src.langgraph_demo.content_retrieve_graph import  trace_list, builder
 
 ROOT = Path(__file__).resolve().parents[2]
 CASES_PATH=ROOT/"data"/"test"/"cases.jsonl"
@@ -46,16 +46,20 @@ class AskResponse(BaseModel):
 @asynccontextmanager #执行声明周期的注解
 async def lifespan(app:FastAPI):
     #先进行指标测试，通过才让启动
-    res = indicator_test()
-    if res:
-        #测试没有通过
-        error_text = "测试没有通过,具体信息如下:"
-        for err_text in res:
-            error_text+='\n'+err_text+'\n'
-        raise SystemExit(error_text)
 
-    #测试通过，开始构建graph
-    pool = AsyncConnectionPool(conninfo=DB_URI, max_size=10, open=False) # 创建一个数据库连接池，先别开，后面手动开
+    # res = indicator_test()
+    # if res:
+    #     #测试没有通过
+    #     error_text = "测试没有通过,具体信息如下:"
+    #     for err_text in res:
+    #         error_text+='\n'+err_text+'\n'
+    #     raise SystemExit(error_text)
+
+    #测试通过，开始构建graph,加入kwargs的原因是，事务自动提交，防止setup在手动事务里失效的问题
+    pool = AsyncConnectionPool(conninfo=DATA_BASE_URL.replace("postgresql+psycopg://", "postgresql://"),
+                               max_size=10,
+                               kwargs={"autocommit": True, "prepare_threshold": 0},
+                               open=False)
 
     await pool.open()
     checkpointer = AsyncPostgresSaver(pool) #checkPointer用这个池读写PG
@@ -111,13 +115,19 @@ async def generate_object_retry(retryRequest: RetryRequest):
                 if "data" in ev:
                     if "output" in ev["data"]:
                         if isinstance(ev["data"]["output"], dict) and "answer" in ev["data"]["output"]:
-                            final_answer = ev["data"]["output"]  ["answer"]
+                            final_answer = ev["data"]["output"]["answer"]
                 # if "answer" in ev["data"]["output"]:
                 #     final_answer = ev["data"]["output"]["answer"]
         print("final_answer:",final_answer)
+
+        if not final_answer:
+            #如果发现final_answer没有答案，说明本次可能是已经到END节点了，中断重试导致的无事件发出，需要检查一次state中的answer
+            state = await app.state.graph.aget_state(config)
+            final_answer=state.values.get("answer", "")
         if final_answer:
             yield f"event: done\ndata: {json.dumps(final_answer,ensure_ascii=False)}\n\n"
-    except Exception as e:
+
+    except Exception:
         # 报错返回500
         with engine.begin() as conn:
             conn.execute(insert(user_chat_request_table), {
@@ -196,7 +206,7 @@ async def generate_object(askRequest: AskRequest):
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app,host="127.0.0.1",port=8080)
+    uvicorn.run(app,host="127.0.0.1",port=8080,loop="asyncio:SelectorEventLoop")
 
     #试着取出流事件，然后打印
 

@@ -92,7 +92,8 @@ def retrieve_by_keyword(question:str)-> list:
 
     return find_parent_chuck_by_parent_ids(list(parent_ids))
 
-#传入的symptoms_list_in_question是问题中的症状词列表，没有走input_greater为null
+#知識图谱检索，根据问题空的症状表现--病名--父块ids--
+#传入的symptoms_list_in_question是问题中的症状词列表，如果有symptoms_list_in_question就不用走llm
 def retrieve_by_knowledge_graph(question:str,symptoms_list_in_question:list=None)->list:
     disease_count_dict=defaultdict(int)
     #判断list是否为none，如果是none，走老检索逻辑不然就直接使用
@@ -123,12 +124,13 @@ def retrieve_by_knowledge_graph(question:str,symptoms_list_in_question:list=None
 
     #返回一个字典，在neo4j结果直接取病名，然后计数加hit，得到病名-统计表
     disease_count_dict={neo4j_diseases_re["name"]:neo4j_diseases_re["hit"] for neo4j_diseases_re in neo4j_diseases_res}
-    #如果数据库内没有匹配的病，那就返回none
     disease_list = list(disease_count_dict.keys())
+    #如果数据库内没有匹配的病，那就返回none
     if not disease_list:
         return []
     #3,通过病名查询出父块资料的ids(注意，一个病名有多个父块)
     with (engine.begin() as connect):
+
         parent_id_list = connect.execute(select(disease_parent_chuck_table.c.id)
                                          .where(disease_parent_chuck_table.c.disease.in_(disease_list))
                                          ).scalars().all()
@@ -155,7 +157,7 @@ def retrieve_by_knowledge_graph(question:str,symptoms_list_in_question:list=None
 
     return res_doc_list
 
-#通过parent_ids就能找到带问题距离的docs
+#传入父块ids，单父块找到 对应子块们和问题匹配的最小score 作为 父块的score
 def get_doc_with_score_by_parent_id_list(parent_id_list: list[Any], question: str) -> list:
     #没有父块资料，返回none
     if not parent_id_list:
