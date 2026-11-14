@@ -43,12 +43,18 @@ async def  cases_test(cases_path:Path):
             expect = line_dict["expect"]
 
             rank=-1
+            trace_id = str(uuid.uuid4())
             #打印出引用的info和status，和期待的status(expect)和info
             try:
                 #调用llm获取到最终的结果
                 start_time = datetime.datetime.now()
-                state=await graph.ainvoke({"question": question, "trace_id": str(uuid.uuid4())})
 
+                # 编辑配置：传入线程id
+                thread_id=str(uuid.uuid4())
+                config={"configurable":{"thread_id":thread_id}}
+
+                # 传入当前线程的Config，这样就可以启动断点重放了
+                state=await graph.ainvoke({"question": question, "trace_id": trace_id}, config)
 
                 #先判断status是否一致，不一致直接标记bad-case。
                 question_type=line_dict.get("type")
@@ -87,7 +93,7 @@ async def  cases_test(cases_path:Path):
                 if question_type== "fast_answer":
                     #t2快速回答类型
                     #t2.0再跑一遍，这次要使用缓存了
-                    state_again=await graph.ainvoke({"question": question, "trace_id": str(uuid.uuid4())})
+                    state_again=await graph.ainvoke({"question": question, "trace_id": str(uuid.uuid4())},config)
                     #t2.1判断是否跑了大模型
                     if state_again.get("use_llm", False):
                         bad_case_reason += f"调用了大模型，但Fast_Answer类型期待不使用大模型\n"
@@ -104,7 +110,7 @@ async def  cases_test(cases_path:Path):
                         "type":line_dict.get("type"),
                         "question":question,
                         "passed": False,#系统错误
-                        "trace_id":state['trace_id'],#一次请求一个trace_id
+                        "trace_id":trace_id,#一次请求一个trace_id
                         "run_id": run_id,#这批的id，用于统计通过率
                         "citation_status": None,#引用状态,有"NO_CITATION,NORMAL_CITATION,ERROR_CITATION"
                         "fail_reason": traceback.format_exc(),
@@ -127,7 +133,7 @@ async def  cases_test(cases_path:Path):
                     "type":line_dict.get("type"),
                     "question":state["question"],
                     "passed": bad_case_reason=="",#不是bad_case才能通过
-                    "trace_id":state['trace_id'],#一次请求一个trace_id
+                    "trace_id":trace_id,#一次请求一个trace_id
                     "run_id": run_id,#这批的id，用于统计通过率
                     "citation_status": state.get("citation_status",None),#引用状态,有"NO_CITATION,NORMAL_CITATION,ERROR_CITATION"
                     "fail_reason":  bad_case_reason,

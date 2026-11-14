@@ -1,22 +1,26 @@
 import datetime
 import inspect
 import pypinyin
-from pydantic import BaseModel
+import re
+import traceback
 
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.types import RetryPolicy
+from openai import timeout
+from psycopg_pool import ConnectionPool
+from pydantic import BaseModel
 from src.langgraph_demo.init_redis import redis_template
 from src.parent_child_chunk.content_retrieve_constant import ABSTRACT_SYMPTOM_PROMPT
 from langchain_core.runnables import RunnableConfig
-import re
-import json
-import traceback
 from src.langgraph_demo.init_logging import logger
 from src.langgraph_demo.langgraph_demo_graph_constant import (
     NORMAL_CITATION, ERROR_CITATION, NO_CITATION,
     ANSWER_STATUS_NORMAL, ANSWER_STATUS_REFUSE,
-    NODE_SAFETY_CHECK, NODE_DANGER_HANDLER,
+    NODE_DANGER_HANDLER,
     NODE_RETRIEVE_KEYWORD, NODE_RETRIEVE_EMBEDDING,
     NODE_HANDLE_RETRIEVE_RES, NODE_SEND_TO_LLM,
-    NODE_POST_GUARDRAIL, NODE_REFUSE_ANSWER, ANSWER_STATUS_DANGER, danger_word_list,
+    NODE_POST_GUARDRAIL, NODE_REFUSE_ANSWER, ANSWER_STATUS_DANGER,
     NODE_RETRIEVE_GRAPH, NODE_FAST_ANSWER_HANDLER, NODE_FAST_ANSWER_JUDGER, NODE_VALIDATE_ANSWER,
     disease_list, NODE_INPUT_GREATER, common_disease_dict, alias_transport_white_list, whole_symptoms_list,
     NODE_INPUT_PRE_HANDLE
@@ -25,20 +29,27 @@ from src.parent_child_chunk.content_retrieve import retrieve_by_keyword, retriev
 from langchain_core.prompts import ChatPromptTemplate
 from typing import TypedDict, Literal, cast
 from langgraph.graph import StateGraph,START,END
-from src.parent_child_chunk.init_model import qwenModel
+from src.parent_child_chunk.init_model import qwenModel, DATA_BASE_URL
 
+#======================================预定义常量=======================================
+
+#改进LLM生成的回答需要的替换Map
 certainty_replace_list=[
     ("您确诊为","您的情况可能显示"),
     ("你确诊为","你的情况可能显示"),
     ("您得了","您的情况可能显示"),
     ("你得了","你的情况可能显示")
 ]
+
 MEDICAL_DISCLAIMER="本回答由AI生成,仅供参考,不代表专业医疗意见。"
+
 random_uuid=""
+
 trace_list=[]
 
-TABLE=["肌肉萎缩", "肌肉无力", "吞咽困难", "肌肉痉挛", "肌肉僵硬", "构音障碍", "步态异常", "精细运动障碍", "反射亢进", "肌肉颤动", "情绪失控", "咀嚼困难", "呼吸困难", "眼球运动障碍", "认知障碍", "疼痛", "抑郁", "睡眠障碍", "便秘", "流涎"]
+#=======================================LangGraph=======================================
 
+#LangGraph图流程进行的时候所需要的变量都放在这里管理
 class State(TypedDict):
     question: str
     changed_question: str
@@ -69,33 +80,38 @@ class State(TypedDict):
     input_pre_handle_label:str
     input_pre_handle_reason:str
 
-#装饰器，记录节点耗时
-#因为graph药求传入的是一个函数，你这只是把fn替换成了time_recorder_wrapper，框架该传入state还是传入了state，包了一层而已
+
+#具体节点函数外面包一层函数，用于实现同异步函数分流、节点记录耗时、异常降级
 def node_wrapper(fn,fallback=None):
+    # 定义异步函数
+    # send_to_llm 节点就是异步函数，因为里面调用了流式的Api方便外面获取流式回答交给前端
     async def async_wrapper(state,config=None):
+
         start_time=datetime.datetime.now()
         error=None
         trace_id = state.get("trace_id")
         result=None
+
         try:
+            #执行fn方法
             if len(inspect.signature(fn).parameters)>=2:
                 result=await fn(state,config)
             else:
                 result=await fn(state)
 
         except Exception as ex:
-            #无论如何都打印出来，不然trace无记录
+            #如果fn执行过程中出现异常，就记录下来
             error=str(traceback.format_exc())
-            #这个节点异常，如果有补偿函数，就调用补偿函数，异常降级
+            #如果有补偿函数，就调用补偿函数，异常降级
             if fallback:
                 result= fallback(state)
             #如果没有，则说明异常不能降级，抛出系统错误
             else:
                 raise ex
+
         finally:
+            #无论成功失败：都要把本机调用fn记录保存下来，加入trace_list，方便可视化链路排查问题
             end_time = datetime.datetime.now()
-            #两个相减是duration类，所以要提取出秒数
-            # print(f"方法:{fn.__name__} 耗时: {(end_time - start_time).total_seconds()} 秒")
             document = {"node_name": fn.__name__,
                         "result": result,
                         "trace_id": trace_id,
@@ -107,7 +123,11 @@ def node_wrapper(fn,fallback=None):
                         "is_deleted": False
                         }
             trace_list.append(document)
+
         return result
+
+
+    # 定义同步函数
     def wrapper(state):
         start_time=datetime.datetime.now()
         error=None
@@ -124,9 +144,9 @@ def node_wrapper(fn,fallback=None):
                 error=str(traceback.format_exc())
                 raise ex
         finally:
+            #无论成功失败：都要把本机调用fn记录保存下来，加入trace_list，方便可视化链路排查问题
+
             end_time = datetime.datetime.now()
-            #两个相减是duration类，所以要提取出秒数
-            # print(f"方法:{fn.__name__} 耗时: {(end_time - start_time).total_seconds()} 秒")
             document = {"node_name": fn.__name__,
                         "result": result,
                         "trace_id": trace_id,
@@ -140,86 +160,15 @@ def node_wrapper(fn,fallback=None):
             trace_list.append(document)
         return result
 
+
+    #依据函数是同步异步返回对应的包装函数
     if inspect.iscoroutinefunction(fn):
         return async_wrapper
     else:
         return wrapper
 
-#检查用户危急情况的函数
-# def safety_check(state:State):
-#     question = state['question']
-#     #维护危险词列表
-#     temp_danger_situation_list=[]
-#     for danger_word in danger_word_list:
-#         if danger_word in question:
-#             temp_danger_situation_list.append(danger_word)
-#     #判断是否包含危险词，如果包含则返回危险情况列表
-#     if len(temp_danger_situation_list)!=0:
-#         return {
-#             "is_danger": True,
-#             "danger_situation_list": temp_danger_situation_list
-#         }
-#     else:
-#         #检查的时候重置危险情况列表
-#         return {"is_danger": False, "danger_situation_list": []}
-#
 
-# #安全检查完之后，转发的函数
-# def safety_check_router(state:State):
-#     if state.get("is_danger", False):
-#         return NODE_DANGER_HANDLER
-#     else:
-#         return NODE_FAST_ANSWER_JUDGER
-
-
-
-#安全检查出危险情况之后，调用的函数
-def danger_situation_handler(state:State):
-    return {"answer": state["danger_answer"],"answer_status":ANSWER_STATUS_DANGER}
-
-#输入预处理函数，主要是提取出症状和转化的文本
-def input_pre_handle(state:State):
-    symptoms_list_in_question=[]
-
-    if whole_symptoms_list:
-        #调用大模型获取结果
-        SYSTEM_PROMPT = (ABSTRACT_SYMPTOM_PROMPT + "\n以下是症状列表:\n"+','.join(whole_symptoms_list)
-                         +"\n"+"\n以下是用户问题\n"+state["question"])
-        StructuredQwenModel = qwenModel.with_structured_output(OutputStructure)
-
-        #把类型投射到模型调用的结果，让结果获得类型
-        res = cast(OutputStructure, StructuredQwenModel.invoke(SYSTEM_PROMPT))
-
-    #结果如下:["label":'','reason':''。。。。]
-        label = res.label
-        reason = res.reason
-        print(f"本条评判{label}的原因是{reason}")
-        danger_answer = res.danger_answer
-        dict_list = res.text_symptom_dict_list
-        #制作symptoms_list_in_question
-        if  dict_list:
-            symptoms_list_in_question=list(set([one_dict["symptom"] for one_dict in dict_list]))
-
-
-        if label== "normal":
-            return {"symptoms_list_in_question": symptoms_list_in_question
-                , "text_symptom_dict_list": dict_list
-                ,"input_pre_handle_label":label}
-        if label== "danger":
-            return {"input_pre_handle_label":label
-                ,"answer_status":ANSWER_STATUS_DANGER
-                ,"danger_answer":danger_answer
-                ,"is_danger": True,}
-        if label== "irrelevant":
-            return {"input_pre_handle_label":label
-                ,"answer_status":ANSWER_STATUS_REFUSE
-                ,"refuse_answer":"本问题超出了我的能力范围"}
-    return {"symptoms_list_in_question": symptoms_list_in_question
-                , "text_symptom_dict_list": []
-                ,"input_pre_handle_label":"normal"}
-
-
-#结构化输入类
+#结构化输出类，规定llm输出的内容要按照如下模式，这边用于预处理函数的时候需要llm产出本次信息标签、理由、文本症状字典列表、危险答案
 class OutputStructure(BaseModel):
     #指定标签，说明这个信息是什么类型的
     label:Literal["danger","irrelevant","normal"]
@@ -230,42 +179,115 @@ class OutputStructure(BaseModel):
     #危险答案，危险情况填充
     danger_answer:str
 
+
+#安全检查出危险情况之后，调用的函数
+def danger_situation_handler(state:State):
+    return {"answer": state["danger_answer"],"answer_status":ANSWER_STATUS_DANGER}
+
+#输入预处理函数(节点)，主要是判断问题类型，提取出句中症状和文本症状对应表
+def input_pre_handle(state:State):
+    symptoms_list_in_question=[]
+
+    #判断症状词是否为空，因为这个症状列表是从neo4j数据库获取的，不能保证neo4j状态
+    if whole_symptoms_list:
+        #调用大模型获取结果
+        SYSTEM_PROMPT = (ABSTRACT_SYMPTOM_PROMPT + "\n以下是症状列表:\n"+','.join(whole_symptoms_list)
+                         +"\n"+"\n以下是用户问题\n"+state["question"])
+        #设置本模型要结构化输出
+        StructuredQwenModel = qwenModel.with_structured_output(OutputStructure)
+
+        #把类型投射到模型调用的结果，让结果获得类型，就是方便ide取获取字段，其实就是套一层皮，不保证返回的真的是OutputStructure
+        res = cast(OutputStructure, StructuredQwenModel.invoke(SYSTEM_PROMPT))
+        #正常结果如下:["label":'','reason':''。。。。]
+
+        #取出数据
+        label = res.label
+        reason = res.reason
+        print(f"本条评判{label}的原因是{reason}")
+        danger_answer = res.danger_answer
+        text_symptom_dict_list = res.text_symptom_dict_list
+
+        #用text_symptom_dict_list提取出句中症状
+        if  text_symptom_dict_list:
+            symptoms_list_in_question=list(set([one_dict["symptom"] for one_dict in text_symptom_dict_list]))
+
+        #根据不同的标签返回不同的结果
+        if label== "normal":
+            #正常结果：返回症状表、文本症状对应表和标签
+            return {"symptoms_list_in_question": symptoms_list_in_question
+                , "text_symptom_dict_list": text_symptom_dict_list
+                ,"input_pre_handle_label":label}
+
+        if label== "danger":
+            #危险结果：返回标签、危险答案、确认危险、更改危险状态
+            return {"input_pre_handle_label":label
+                ,"answer_status":ANSWER_STATUS_DANGER
+                ,"danger_answer":danger_answer
+                ,"is_danger": True,}
+
+        if label== "irrelevant":
+            #无关结果：返回标签和理由和预制回答
+            return {"input_pre_handle_label":label
+                ,"answer_status":ANSWER_STATUS_REFUSE
+                ,"refuse_answer":"本问题超出了我的能力范围"}
+
+    #如果症状表为空，就返回空症状表，因为neo4j失效了
+    return {"symptoms_list_in_question": []
+                , "text_symptom_dict_list": []
+                ,"input_pre_handle_label":"normal"}
+
+
+
+#输入预处理 路由函数，根据输入预处理的标签，返回对应的节点
 def input_pre_handle_router(state:State):
     label = state["input_pre_handle_label"]
+
     if label== "normal":
+        #如果label是normal，就返回输入优化节点
         return NODE_INPUT_GREATER
     if label== "danger":
+        #如果label是danger，就返回危险情况处理节点
         return NODE_DANGER_HANDLER
     if label== "irrelevant":
+        #如果label是irrelevant，就返回无关处理节点
         return NODE_REFUSE_ANSWER
+    #如果label是其他，就直接结束
     return END
 
 
-#输入优化节点,输出优化后的问题
+#输入优化节点,试着优化用户发送的信息，输出优化后的问题
 def input_greater(state:State):
-    
+
+    #==============================PART 0 预处理======================================
+
     question = state['question']
+
+    #有一些固定的提示词如【别名，俗称，。。。】这类就不做改写处理了
     for alias in alias_transport_white_list:
         if alias in question:
             return {"changed_question":question}
+
     #如果问题长度太小，不值得做什么纠正，跳过
     if len(question)<2:
         return {"changed_question":question}
-    #制作standard_top_level,确定窗口匹配的上限
+
+    #因为替换相同拼音的病名需要挨个循环匹配，需要确定匹配多少次，所以需要确定匹配的上限，这边就取最长的病名长度为窗口上限
     lens = max([len(key) for key in common_disease_dict.keys()])
-    standard_top_level=lens if lens>11 else 11
+    #因为病名最大值就是20
+    # standard_top_level=lens if lens>11 else 11
+    standard_top_level=lens
     #检查问题在不在alias转化白名单里面，如在，那就跳过PART2别名病名转化
 
     #=============================PART1 拼音纠正&别名病名转化================================
-    pinyin_disease_replace_list=[]
-    alias_disease_replace_list=[]
-    #- 先获取到所有病名，转化为拼音-病名字典。
+    pinyin_disease_replace_list=[] #拼音和病名替换列表
+    alias_disease_replace_list=[] #别名和病名替换列表
+
+    # 查询我们资料库中(neo4j)存储的所有病名，转化为对应的拼音-病名字典。
     pinyin_disease_map={}
     for disease in disease_list:
         pinyin_disease_map["".join(pypinyin.lazy_pinyin(disease))]=disease
-    #- 然后取5次窗口，2-top_level的窗口（如果用户问题很短，但是大于2个字，上限按用户问题长度来）注意先6后2，防止截断长病名
 
-    #top_level就是窗口上限，防止系统错误，question上限是ken(question)，上限是standard_top_level
+    #top_level就是窗口上限，防止系统错误，question上限是len(question)，上限是standard_top_level
     changed_question=question
 
     top_level=standard_top_level if len(question)>standard_top_level else len(question)
@@ -296,7 +318,9 @@ def input_greater(state:State):
     #ij都是有效的下标
 
     #=============================PART2 症状词-专业名词转化================================
+
     text_symptom_dict_list=state["text_symptom_dict_list"]
+
     #如果res有结果那就狠狠的开始替换原文,并获取问题中的症状列表
     if  text_symptom_dict_list:
         #替换原文，替换为专业的症状词
@@ -306,16 +330,16 @@ def input_greater(state:State):
 
     return {"changed_question":changed_question}
 
+# 第一条链路:关键词检索
 def retrieve_by_keyword_node(state:State):
-    
     return {"keyword_res":retrieve_by_keyword(state['changed_question']),"keyword_retrieval_status":True}
 
-#第二条链路:向量检索
+# 第二条链路:向量检索
 def retrieve_by_embedding_node(state:State):
     
     return {"embedding_res":retrieve_by_embedding(state['changed_question'],10),"embedding_retrieval_status":True}
 
-#第三条链路:知识图谱检索
+# 第三条链路:知识图谱检索
 def retrieve_by_knowledge_graph_node(state:State):
     
     return {"graph_res": retrieve_by_knowledge_graph(state["changed_question"],state.get("symptoms_list_in_question",None)),"graph_retrieval_status":True}
@@ -326,6 +350,7 @@ def get_score(doc,question:str)->int:
     if doc["disease"] in question:
         return 0
     return 1
+
 #处理检索结果,去重,拼贴info
 def handle_retrieve_res(state:State):
     #0,如果三路都挂，直接维护一个refuse_answer
@@ -339,11 +364,13 @@ def handle_retrieve_res(state:State):
     changed_question=state["changed_question"]
     nos = []
     embedding_ids=set()
+
     #2,制作去重id集合
     for embedding_re in embedding_res:
         embedding_ids.add(embedding_re["id"])
 
     #TODO这边还需要取一个最小的score
+
     #3，列表推导式把keyword中在embedding_res中的元素过滤掉，只留下特异性元素，性能更加
     temp_keyword_res=[keyword for keyword in keyword_res if keyword["id"] not in embedding_ids]
     keyword_ids=[]
@@ -351,9 +378,8 @@ def handle_retrieve_res(state:State):
         keyword_ids.append(keyword_re["id"])
 
     temp_graph_res=[one_graph for one_graph in graph_res if one_graph["id"] not in embedding_ids and one_graph["id"] not in keyword_ids]
-
     list_all = embedding_res + temp_keyword_res + temp_graph_res
-    #
+
     #4，docs列表
     for doc in list_all:
         #4.1取出doc的id
@@ -371,6 +397,7 @@ def handle_retrieve_res(state:State):
         if graph_rank!=-1:
             res+=1/(graph_rank+60)
         doc["rrf_score"]=res
+
     #4，根据疾病打分重排
     list_all.sort(key=lambda one:(get_score(one, changed_question), -one["rrf_score"] if one.get("rrf_score") else 1))
 
@@ -449,7 +476,6 @@ async def send_to_llm(state:State, runnableConfig:RunnableConfig):
     async_res = chain.astream({"info": info, "changed_question": changed_question}, config=runnableConfig)
     #相当于在每次都await等待res
     async for res in async_res:
-
         if res.content:
             res_buffer+=res.content
     #使用了大模型
@@ -602,17 +628,24 @@ def fast_answer_fall_back(state:State):
 # 1，根据START创建图
 graph = StateGraph(State)
 #2，增加所有节点
+
+#制定超时策略
+standardRetryPolicy = RetryPolicy(max_attempts=3,
+                     initial_interval=2.0,  # 每次间隔
+                     backoff_factor=2,  # 间隔惩罚倍数
+                     retry_on=(TimeoutError, ConnectionError)
+                     )
+
 graph.add_node(NODE_RETRIEVE_KEYWORD,    node_wrapper(retrieve_by_keyword_node,keyword_fall_back))
 graph.add_node(NODE_RETRIEVE_EMBEDDING,  node_wrapper(retrieve_by_embedding_node,embedding_fall_back))
 graph.add_node(NODE_RETRIEVE_GRAPH,      node_wrapper(retrieve_by_knowledge_graph_node,graph_fall_back))
-graph.add_node(NODE_SEND_TO_LLM,         node_wrapper(send_to_llm))
-# graph.add_node(NODE_SAFETY_CHECK,        node_wrapper(safety_check))
-graph.add_node(NODE_HANDLE_RETRIEVE_RES, node_wrapper(handle_retrieve_res))
-graph.add_node(NODE_VALIDATE_ANSWER,  node_wrapper(validate_answer))
-graph.add_node(NODE_POST_GUARDRAIL,      node_wrapper(post_guardrail))
-graph.add_node(NODE_DANGER_HANDLER,      node_wrapper(danger_situation_handler))
-graph.add_node(NODE_REFUSE_ANSWER,       node_wrapper(refuse_answer_handler))
-graph.add_node(NODE_FAST_ANSWER_HANDLER, node_wrapper(fast_answer_handler))
+graph.add_node(NODE_SEND_TO_LLM,         node_wrapper(send_to_llm),retry_policy=standardRetryPolicy)
+graph.add_node(NODE_HANDLE_RETRIEVE_RES, node_wrapper(handle_retrieve_res),retry_policy=standardRetryPolicy)
+graph.add_node(NODE_VALIDATE_ANSWER,  node_wrapper(validate_answer),retry_policy=standardRetryPolicy)
+graph.add_node(NODE_POST_GUARDRAIL,      node_wrapper(post_guardrail),retry_policy=standardRetryPolicy)
+graph.add_node(NODE_DANGER_HANDLER,      node_wrapper(danger_situation_handler),retry_policy=standardRetryPolicy)
+graph.add_node(NODE_REFUSE_ANSWER,       node_wrapper(refuse_answer_handler),retry_policy=standardRetryPolicy)
+graph.add_node(NODE_FAST_ANSWER_HANDLER, node_wrapper(fast_answer_handler),retry_policy=standardRetryPolicy )
 graph.add_node(NODE_FAST_ANSWER_JUDGER, node_wrapper(fast_answer_judger,fast_answer_fall_back))
 graph.add_node(NODE_INPUT_GREATER, node_wrapper(input_greater,input_greater_fall_back))
 graph.add_node(NODE_INPUT_PRE_HANDLE, node_wrapper(input_pre_handle,input_pre_handle_fall_back))
@@ -644,8 +677,19 @@ graph.add_edge(NODE_DANGER_HANDLER, NODE_POST_GUARDRAIL)
 graph.add_edge(NODE_FAST_ANSWER_HANDLER, END)
 graph.add_edge(NODE_POST_GUARDRAIL, END)
 
-#5,编译
-graph=graph.compile()
+#5,编译的时候带上 checkPointer 配置，启动检查点，传入langgraph包里的检查点
+
+#这边采用数据库检查点，因为刚好有pg，持久化保存控制流状态
+
+DB_URI = DATA_BASE_URL.replace("postgresql+psycopg://", "postgresql://") #不用psycpg翻译，直接纯postgre即可
+_pool = ConnectionPool(conninfo=DB_URI, max_size=10) #连接池
+_checkpointer  = PostgresSaver(_pool)
+_checkpointer.setup() #建表幂等
+
+builder=graph #未编译的图
+graph=graph.compile(checkpointer=_checkpointer)
+#后面重试的时候就可以从检查点开始了。
+
 
 
 
