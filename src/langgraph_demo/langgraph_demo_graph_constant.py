@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from src.data_graph.neo4j_init import neo4j_driver
-from src.parent_child_chunk.init_model import qwenModel
+from src.parent_child_chunk.init_model import model
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET_PATH = ROOT / "data" /"cleaned" / "full.jsonl"
@@ -34,6 +34,7 @@ NODE_FAST_ANSWER_HANDLER = "fast_answer_handler"
 NODE_FAST_ANSWER_JUDGER = "fast_answer_judger"
 NODE_INPUT_GREATER = "input_greater"
 NODE_INPUT_PRE_HANDLE = "input_pre_handle"
+NODE_REWRITE_WITH_HISTORY = "rewrite_with_history"
 
 
 danger_word_list= [

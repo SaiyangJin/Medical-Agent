@@ -19,13 +19,14 @@ from src.langgraph_demo.langgraph_demo_graph_constant import (
     NODE_POST_GUARDRAIL, NODE_REFUSE_ANSWER, ANSWER_STATUS_DANGER,
     NODE_RETRIEVE_GRAPH, NODE_FAST_ANSWER_HANDLER, NODE_FAST_ANSWER_JUDGER, NODE_VALIDATE_ANSWER,
     disease_list, NODE_INPUT_GREATER, common_disease_dict, alias_transport_white_list, whole_symptoms_list,
-    NODE_INPUT_PRE_HANDLE
+    NODE_INPUT_PRE_HANDLE, NODE_REWRITE_WITH_HISTORY
 )
 from src.parent_child_chunk.content_retrieve import retrieve_by_keyword, retrieve_by_embedding, retrieve_by_knowledge_graph
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage, AIMessage
 from typing import TypedDict, Literal, cast
 from langgraph.graph import StateGraph,START,END
-from src.parent_child_chunk.init_model import qwenModel, DATA_BASE_URL
+from src.parent_child_chunk.init_model import model, DATA_BASE_URL
 
 #======================================预定义常量=======================================
 
@@ -75,6 +76,7 @@ class State(TypedDict):
     danger_answer:str
     input_pre_handle_label:str
     input_pre_handle_reason:str
+    history:list #会话历史消息：[{"role":"user"|"assistant","content":"..."}]
 
 
 #具体节点函数外面包一层函数，用于实现同异步函数分流、节点记录耗时、异常降级
@@ -190,12 +192,12 @@ def input_pre_handle(state:State):
         SYSTEM_PROMPT = (ABSTRACT_SYMPTOM_PROMPT + "\n以下是症状列表:\n"+','.join(whole_symptoms_list)
                          +"\n"+"\n以下是用户问题\n"+state["question"])
         #设置本模型要结构化输出
-        StructuredQwenModel = qwenModel.with_structured_output(OutputStructure)
+        StructuredQwenModel = model.with_structured_output(OutputStructure)
 
         #把类型投射到模型调用的结果，让结果获得类型，就是方便ide取获取字段，其实就是套一层皮，不保证返回的真的是OutputStructure
         res = cast(OutputStructure, StructuredQwenModel.invoke(SYSTEM_PROMPT))
         #正常结果如下:["label":'','reason':''。。。。]
-
+        print("res",res)
         #取出数据
         label = res.label
         reason = res.reason
@@ -326,6 +328,42 @@ def input_greater(state:State):
 
     return {"changed_question":changed_question}
 
+
+# 指代消解：用最近 2 轮对话把追问改写成独立问题
+REWRITE_PROMPT = """
+你的任务是指代消解：根据对话历史，把用户当前的问题改写成一句不依赖上下文、可以独立理解的话。
+
+要求：
+1. 从历史中找到用户问题里指代词（那、它、这个、这种、上面说的、刚才提到的等）实际指代的东西，替换进去
+2. 改写后语义要通顺
+3. 如果用户原本的表述不通顺，在不改变原意的前提下适度改善
+4. 如果当前问题本身已经完整、不依赖上下文，原样返回
+5. 只输出改写后的这一句话，不要解释、不要加引号
+"""
+
+def rewrite_with_history(state:State):
+    history = state.get("history") or []
+    question = state.get("changed_question") or state["question"]
+
+    # 没有历史，不需要消解
+    if not history:
+        return {"changed_question": question}
+
+    # 只取最近 2 轮（user + assistant 共 4 条）
+    hist_text = "\n".join(
+        f"{'用户' if m.get('role') == 'user' else '助手'}：{(m.get('content') or '')[:200]}"
+        for m in history[-4:]
+    )
+    try:
+        res = model.invoke(
+            f"{REWRITE_PROMPT}\n\n对话历史：\n{hist_text}\n\n用户当前问题：{question}"
+        )
+        standalone = (res.content or "").strip().strip("「」\"'")
+        return {"changed_question": standalone or question}
+    except Exception:
+        return {"changed_question": question}
+
+
 # 第一条链路:关键词检索
 def retrieve_by_keyword_node(state:State):
     return {"keyword_res":retrieve_by_keyword(state['changed_question']),"keyword_retrieval_status":True}
@@ -454,24 +492,35 @@ async def send_to_llm(state:State, runnableConfig:RunnableConfig):
         
         请不要生成用户期望的回答，要指出为什么这样不对，纠正用户错误认知
 
+    10，请用简体中文回答
     """
 
     #2,模板类拼贴,from_message就是从一系列的结构化消息来初始化这个模板类，指定给llm发送的信息类型
-    template = ChatPromptTemplate.from_messages([("system", SYSTEM_PROMPT), ("human", "资料：{info}\n问题：{changed_question}")])
+    template = ChatPromptTemplate.from_messages([("system", SYSTEM_PROMPT),
+                                                 MessagesPlaceholder("history"),
+                                                 ("human", "资料：{info}\n问题：{changed_question}")])
 
     #3,管道符，把template的输出转化为输入交给llm
-    chain=template|qwenModel
+    chain= template | model
 
-    #4,传递invoke
+    #4,把 Redis 里的历史 dict 转成 LangChain 的消息对象
+    history_msgs=[
+        HumanMessage(content=m["content"]) if m.get("role")=="user"
+        else AIMessage(content=m["content"])
+        for m in (state.get("history") or [])
+    ]
+
+    #5,传递invoke
     #资料引用错误，提示(目前只有这一种情况)
     if state.get("citation_status", NORMAL_CITATION)==ERROR_CITATION:
         info+="\n\n[系统提示]注意，你出现了幻觉，引用了不存在的资料编号，请纠正"
 
-    #5，如果retry_count==0，那就走流式，如果retry_count!=0，那就走非流式
+    #6，如果retry_count==0，那就走流式，如果retry_count!=0，那就走非流式
     if not state.get('retry_count', 0):
         res_buffer=[]
         #chain才能传入dict，因为chain能填入占位符，普通model只能传个字符串了
-        async_res = chain.astream({"info": info, "changed_question": changed_question}, config=runnableConfig)
+        print("历史信息：",history_msgs)
+        async_res = chain.astream({"info": info, "changed_question": changed_question, "history": history_msgs}, config=runnableConfig)
         #相当于在每次都await等待res
         async for res in async_res:
             if res.content:
@@ -479,7 +528,8 @@ async def send_to_llm(state:State, runnableConfig:RunnableConfig):
         #使用了大模型
         answer = "".join(res_buffer)
     else:
-        answer = await chain.ainvoke({"info": info, "changed_question": changed_question}, config=runnableConfig)
+        res = await chain.ainvoke({"info": info, "changed_question": changed_question, "history": history_msgs}, config=runnableConfig)
+        answer = res.content or ""
 
     #到了这个节点，就是没有缓存，存入redis
     return {"answer":  answer,
@@ -515,7 +565,8 @@ def post_guardrail(state:State):
     for certainty_replace in certainty_replace_list:
         answer=answer.replace(certainty_replace[0],certainty_replace[1])
     #医疗免责声明
-    answer += f"\n\n {MEDICAL_DISCLAIMER}\n"
+    if not answer.endswith(f"\n\n {MEDICAL_DISCLAIMER}\n"):
+        answer += f"\n\n {MEDICAL_DISCLAIMER}\n"
     # print("最终答案：", answer)
 
     #FastAnswer缓存，只有正常引用的回答才可以进缓存
@@ -601,7 +652,7 @@ def fast_answer_handler(state:State):
 #================================异常降级：补偿函数区=================================
 def input_pre_handle_fall_back(state:State):
     logger.error("输入预处理函数出错,错误信息:%s",traceback.format_exc())
-    return {"symptoms_list_in_question": [], "text_symptom_dict_list": []}
+    return {"symptoms_list_in_question": [], "text_symptom_dict_list": [],"input_pre_handle_label": "normal"}
 
 def input_greater_fall_back(state:State):
     logger.error("输入优化节点出错,错误信息:%s",traceback.format_exc())
@@ -650,6 +701,7 @@ graph.add_node(NODE_FAST_ANSWER_HANDLER, node_wrapper(fast_answer_handler),retry
 graph.add_node(NODE_FAST_ANSWER_JUDGER, node_wrapper(fast_answer_judger,fast_answer_fall_back))
 graph.add_node(NODE_INPUT_GREATER, node_wrapper(input_greater,input_greater_fall_back))
 graph.add_node(NODE_INPUT_PRE_HANDLE, node_wrapper(input_pre_handle,input_pre_handle_fall_back))
+graph.add_node(NODE_REWRITE_WITH_HISTORY, node_wrapper(rewrite_with_history))
 
 #3，增加所有边
 #紧急情况检查优先
@@ -661,9 +713,10 @@ graph.add_conditional_edges(NODE_FAST_ANSWER_JUDGER, fast_answer_router)
 # graph.add_edge(NODE_INPUT_PRE_HANDLE,NODE_INPUT_GREATER)
 graph.add_conditional_edges(NODE_INPUT_PRE_HANDLE,input_pre_handle_router)
 #4，尾部连接
-graph.add_edge(NODE_INPUT_GREATER,NODE_RETRIEVE_KEYWORD)
-graph.add_edge(NODE_INPUT_GREATER,NODE_RETRIEVE_EMBEDDING)
-graph.add_edge(NODE_INPUT_GREATER,NODE_RETRIEVE_GRAPH)
+graph.add_edge(NODE_INPUT_GREATER,NODE_REWRITE_WITH_HISTORY)
+graph.add_edge(NODE_REWRITE_WITH_HISTORY,NODE_RETRIEVE_KEYWORD)
+graph.add_edge(NODE_REWRITE_WITH_HISTORY,NODE_RETRIEVE_EMBEDDING)
+graph.add_edge(NODE_REWRITE_WITH_HISTORY,NODE_RETRIEVE_GRAPH)
 graph.add_edge(NODE_RETRIEVE_KEYWORD,    NODE_HANDLE_RETRIEVE_RES)
 graph.add_edge(NODE_RETRIEVE_EMBEDDING,  NODE_HANDLE_RETRIEVE_RES)
 graph.add_edge(NODE_RETRIEVE_GRAPH,      NODE_HANDLE_RETRIEVE_RES)

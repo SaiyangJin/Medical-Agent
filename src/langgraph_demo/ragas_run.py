@@ -6,7 +6,7 @@ from ragas.metrics import faithfulness
 from sqlalchemy import select
 
 from src.langgraph_demo.trace_table_init import request_table, trace_table
-from src.parent_child_chunk.init_model import qwenModel, embeddingModel, engine, backupQwenModel
+from src.parent_child_chunk.init_model import model, embeddingModel, engine, backupModel
 
 #测试构建一个测试数据集
 sample = SingleTurnSample(
@@ -75,7 +75,7 @@ def get_faithfulness():
 
     #运行评测g,传入测试对象，传入llm
     e = evaluate(dataset=dataset#测试集
-                 , llm=LangchainLLMWrapper(backupQwenModel)
+                 , llm=LangchainLLMWrapper(backupModel)
                  ,embeddings=embeddingModel#向量模型，暂时不需要
                  ,raise_exceptions=True#抛出异常
                  ,show_progress=True#展示检索进度条

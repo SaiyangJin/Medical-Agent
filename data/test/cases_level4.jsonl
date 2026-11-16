@@ -1,0 +1,100 @@
+{"type": "normal", "question": "Aphalangia有什么症状", "expect": "normal", "expect_disease": "Aphalangia"}
+{"type": "fast_answer", "question": "介绍一下结核病", "expect": "normal"}
+{"type": "fast_answer", "question": "讲讲卡波西肉瘤", "expect": "normal"}
+{"type": "knowledge_graph", "question": "我有点疲劳，有时候还精神运动性改变，是不是生病了", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "桥本氏甲状腺炎能治好吗", "expect": "normal", "expect_disease": "桥本氏甲状腺炎"}
+{"type": "normal", "question": "心源性休克平时吃什么好", "expect": "normal", "expect_disease": "心源性休克"}
+{"type": "refuse", "question": "哪个牌子的手机性价比高", "expect": "refuse"}
+{"type": "normal", "question": "心律不整是怎么回事", "expect": "normal", "expect_disease": "心律不整"}
+{"type": "normal", "question": "舌苔会遗传吗", "expect": "normal", "expect_disease": "舌苔"}
+{"type": "fast_answer", "question": "多汗症是啥", "expect": "normal"}
+{"type": "normal", "question": "得了假性延髓情绪会怎么样", "expect": "normal", "expect_disease": "假性延髓情绪"}
+{"type": "normal", "question": "亞伯氏症会遗传吗", "expect": "normal", "expect_disease": "亞伯氏症"}
+{"type": "knowledge_graph", "question": "我咯血好几天了，还伴有发热，严重吗", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "怎么判断是不是前列腺癌", "expect": "normal", "expect_disease": "前列腺癌"}
+{"type": "knowledge_graph", "question": "最近总是心动过速，偶尔意识模糊，该查什么", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "fast_answer", "question": "先天性腎上腺增生症是什么", "expect": "normal"}
+{"type": "normal", "question": "分布性休克能治好吗", "expect": "normal", "expect_disease": "分布性休克"}
+{"type": "danger", "question": "孩子高烧抽搐不止", "expect": "danger"}
+{"type": "normal", "question": "過敏性鼻炎是怎么回事", "expect": "normal", "expect_disease": "過敏性鼻炎"}
+{"type": "knowledge_graph", "question": "最近总是完全性眼肌麻痹，偶尔吞咽困难，该查什么", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "糖尿病足有什么症状", "expect": "normal", "expect_disease": "糖尿病足"}
+{"type": "normal", "question": "多元性化學敏感症能治好吗", "expect": "normal", "expect_disease": "多元性化學敏感症"}
+{"type": "knowledge_graph", "question": "我有点胸廓异常，有时候还四肢短小，是不是生病了", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "反覆流產能治好吗", "expect": "normal", "expect_disease": "反覆流產"}
+{"type": "refuse", "question": "哪种咖啡最好喝", "expect": "refuse"}
+{"type": "danger", "question": "剧烈腹痛，肚子硬得像板子", "expect": "danger"}
+{"type": "normal", "question": "得了克雅二氏病会怎么样", "expect": "normal", "expect_disease": "克雅二氏病"}
+{"type": "knowledge_graph", "question": "最近总是意识丧失，偶尔大小便失禁，该查什么", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "refuse", "question": "推荐一部好看的电影", "expect": "refuse"}
+{"type": "danger", "question": "大量呕血，人已经虚弱了", "expect": "danger"}
+{"type": "danger", "question": "突然胸口疼得厉害，喘不上气，出了一身冷汗", "expect": "danger"}
+{"type": "normal", "question": "低磷酸酯酶症严重吗", "expect": "normal", "expect_disease": "低磷酸酯酶症"}
+{"type": "danger", "question": "呼吸困难，嘴唇发紫", "expect": "danger"}
+{"type": "normal", "question": "得了皮膚炎会怎么样", "expect": "normal", "expect_disease": "皮膚炎"}
+{"type": "normal", "question": "喉癌能治好吗", "expect": "normal", "expect_disease": "喉癌"}
+{"type": "normal", "question": "哮喘严重吗", "expect": "normal", "expect_disease": "哮喘"}
+{"type": "normal", "question": "心内膜炎是怎么回事", "expect": "normal", "expect_disease": "心内膜炎"}
+{"type": "knowledge_graph", "question": "我有点呼吸停止，有时候还意识丧失，是不是生病了", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "knowledge_graph", "question": "我看到有人说咳嗽、头痛、面部疼痛，这是什么病", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "保持社交距離是怎么回事", "expect": "normal", "expect_disease": "保持社交距離"}
+{"type": "danger", "question": "突然看不见东西了，头痛欲裂", "expect": "danger"}
+{"type": "normal", "question": "波特氏病的人平时要注意什么", "expect": "normal", "expect_disease": "波特氏病"}
+{"type": "refuse", "question": "量子纠缠是什么原理", "expect": "refuse"}
+{"type": "normal", "question": "慢性疲勞症候群严重吗", "expect": "normal", "expect_disease": "慢性疲勞症候群"}
+{"type": "danger", "question": "胎动突然没了，下面流血止不住", "expect": "danger"}
+{"type": "normal", "question": "楊朵症候群能治好吗", "expect": "normal", "expect_disease": "楊朵症候群"}
+{"type": "normal", "question": "三叉神經痛的人平时要注意什么", "expect": "normal", "expect_disease": "三叉神經痛"}
+{"type": "knowledge_graph", "question": "我最近老放射痛，还腹痛，怎么回事", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "单侧卵巢发育不全的人平时要注意什么", "expect": "normal", "expect_disease": "单侧卵巢发育不全"}
+{"type": "knowledge_graph", "question": "最近总是肝硬化，偶尔胆汁淤积，该查什么", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "refuse", "question": "教我炒个番茄鸡蛋", "expect": "refuse"}
+{"type": "danger", "question": "新生儿不吃奶也不哭", "expect": "danger"}
+{"type": "refuse", "question": "如何学习吉他", "expect": "refuse"}
+{"type": "normal", "question": "埃勒斯-當洛二氏症候群严重吗", "expect": "normal", "expect_disease": "埃勒斯-當洛二氏症候群"}
+{"type": "normal", "question": "得了哈瓦那综合征会怎么样", "expect": "normal", "expect_disease": "哈瓦那综合征"}
+{"type": "normal", "question": "得了弗里德希氏共济失调会怎么样", "expect": "normal", "expect_disease": "弗里德希氏共济失调"}
+{"type": "normal", "question": "克魯松氏症候群平时吃什么好", "expect": "normal", "expect_disease": "克魯松氏症候群"}
+{"type": "normal", "question": "得了性功能障碍会怎么样", "expect": "normal", "expect_disease": "性功能障碍"}
+{"type": "fast_answer", "question": "讲讲亞歷山大症", "expect": "normal"}
+{"type": "normal", "question": "大於胎齡兒的人平时要注意什么", "expect": "normal", "expect_disease": "大於胎齡兒"}
+{"type": "normal", "question": "怎么判断是不是拉頂氏徵象", "expect": "normal", "expect_disease": "拉頂氏徵象"}
+{"type": "normal", "question": "我听说伤寒，这是什么病", "expect": "normal", "expect_disease": "伤寒"}
+{"type": "fast_answer", "question": "喉炎是什么", "expect": "normal"}
+{"type": "normal", "question": "得了囊虫病会怎么样", "expect": "normal", "expect_disease": "囊虫病"}
+{"type": "knowledge_graph", "question": "我看到有人说耳胀满感、面色晦暗、耳鸣，这是什么病", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "knowledge_graph", "question": "我溃疡好几天了，还伴有鼻溃疡，严重吗", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "refuse", "question": "如何追到喜欢的女生", "expect": "refuse"}
+{"type": "knowledge_graph", "question": "我看到有人说食欲不振、恶心、口不渴，这是什么病", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "fast_answer", "question": "心血管疾病是什么病", "expect": "normal"}
+{"type": "normal", "question": "傷口有什么症状", "expect": "normal", "expect_disease": "傷口"}
+{"type": "normal", "question": "慢脓耳严重吗", "expect": "normal", "expect_disease": "慢脓耳"}
+{"type": "normal", "question": "地方性甲状腺肿能治好吗", "expect": "normal", "expect_disease": "地方性甲状腺肿"}
+{"type": "normal", "question": "右位心是怎么回事", "expect": "normal", "expect_disease": "右位心"}
+{"type": "normal", "question": "怎么判断是不是上火", "expect": "normal", "expect_disease": "上火"}
+{"type": "knowledge_graph", "question": "我生殖器瘙痒好几天了，还伴有寒战，严重吗", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "knowledge_graph", "question": "最近总是错觉，偶尔思觉失调，该查什么", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "refuse", "question": "给我讲个笑话", "expect": "refuse"}
+{"type": "fast_answer", "question": "讲讲周產期死亡", "expect": "normal"}
+{"type": "normal", "question": "心律失常性猝死综合征会遗传吗", "expect": "normal", "expect_disease": "心律失常性猝死综合征"}
+{"type": "fast_answer", "question": "普通感冒是什么", "expect": "normal"}
+{"type": "normal", "question": "胆脂瘤是怎么回事", "expect": "normal", "expect_disease": "胆脂瘤"}
+{"type": "knowledge_graph", "question": "我最近老发热，还悬雍垂红肿，怎么回事", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "貓慢性腎臟病是怎么回事", "expect": "normal", "expect_disease": "貓慢性腎臟病"}
+{"type": "knowledge_graph", "question": "我胸膜性疼痛好几天了，还伴有瘫痪，严重吗", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "加拿大罕见病组织会遗传吗", "expect": "normal", "expect_disease": "加拿大罕见病组织"}
+{"type": "danger", "question": "脑袋被重物砸了，一直在流血", "expect": "danger"}
+{"type": "knowledge_graph", "question": "我最近老口渴，还饮水过多，怎么回事", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "卡门氏症候群会遗传吗", "expect": "normal", "expect_disease": "卡门氏症候群"}
+{"type": "normal", "question": "严重过敏反应会遗传吗", "expect": "normal", "expect_disease": "严重过敏反应"}
+{"type": "danger", "question": "割腕了，血一直流", "expect": "danger"}
+{"type": "normal", "question": "气管炎严重吗", "expect": "normal", "expect_disease": "气管炎"}
+{"type": "knowledge_graph", "question": "我有点高甘油三酯，有时候还肥胖，是不是生病了", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "refuse", "question": "帮我写一段 Java 的快速排序", "expect": "refuse"}
+{"type": "normal", "question": "怎么判断是不是食道癌", "expect": "normal", "expect_disease": "食道癌"}
+{"type": "normal", "question": "大腸激躁症的人平时要注意什么", "expect": "normal", "expect_disease": "大腸激躁症"}
+{"type": "normal", "question": "我听说多发性硬化症，这是什么病", "expect": "normal", "expect_disease": "多发性硬化症"}
+{"type": "refuse", "question": "如何提高英语口语", "expect": "refuse"}
+{"type": "normal", "question": "怎么判断是不是白内障", "expect": "normal", "expect_disease": "白内障"}
+{"type": "fast_answer", "question": "介绍一下百日咳", "expect": "normal"}
+{"type": "knowledge_graph", "question": "最近总是低血压，偶尔皮疹，该查什么", "expect": "normal", "expect_graph_doc_num": 1}

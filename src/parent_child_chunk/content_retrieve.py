@@ -17,7 +17,7 @@ from src.parent_child_chunk.init_model import engine, pg_vector
 
 import time
 from src.data_graph.neo4j_init import neo4j_driver
-from src.parent_child_chunk.init_model import qwenModel
+from src.parent_child_chunk.init_model import model
 
 #这个函数用来测试从问题检索到字块再检索到父块的过程
 #k的含义是，根据问题，返回k个最相关的子块
@@ -108,11 +108,12 @@ def retrieve_by_knowledge_graph(question:str,symptoms_list_in_question:list=None
             列表如下:
             """ +','.join(whole_symptoms_list))
 
-        res = qwenModel.invoke(SYSTEM_PROMPT)
+        res = model.invoke(SYSTEM_PROMPT)
 
         #提取到的症状如[{"text":"头昏沉沉的","symptom":"头晕"}]
         res_list = json.loads(res.content)
         symptoms_list_in_question=list(set(res_list))
+        print("症状表",symptoms_list_in_question)
     if not symptoms_list_in_question:
         return []
 

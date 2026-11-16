@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from src.parent_child_chunk.init_model import qwenModel
+from src.parent_child_chunk.init_model import model
 
 #定义结构化类(用pydantic加强检验)
 
@@ -13,7 +13,7 @@ class OutputStructure(BaseModel):
     reason:str
 
 
-structured_llm = qwenModel.with_structured_output(OutputStructure)
+structured_llm = model.with_structured_output(OutputStructure)
 invoke = structured_llm.invoke("經濟局勢怎麽樣")
 
 print(invoke.label)

@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from langchain_postgres import PGVector
 #导入向量模型类
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from openai import OpenAI
 #导入sql操作类
 from sqlalchemy import (create_engine)
 
@@ -37,13 +38,23 @@ pg_vector = PGVector(embeddingModel,
                      # pre_delete_collection=True #插入之前先删表的元素（开发阶段）
                      )
 #创建大语言模型
-qwenModel = ChatOpenAI(base_url="https://ws-8v7hg43jappdrllz.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-                       model="kimi-k3.1-pro", api_key=os.environ.get("DASHSCOPE_API_KEY"),timeout=300000)
-backupQwenModel = ChatOpenAI(base_url="https://ws-8v7hg43jappdrllz.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-                       model="kimi-k3.1-pro", api_key=os.environ.get("DASHSCOPE_API_KEY"),timeout=300000)
+model = ChatOpenAI(base_url="https://ws-8v7hg43jappdrllz.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+                   model="qwen4-max", api_key=os.environ.get("DASHSCOPE_API_KEY"), timeout=300000)
+# backupModel = ChatOpenAI(base_url="https://ws-8v7hg43jappdrllz.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+#                          model="qwen3.8-27b", api_key=os.environ.get("DASHSCOPE_API_KEY"), timeout=300000)
+
+
+#快速
+# model = ChatOpenAI(base_url="https://ark.cn-beijing.volces.com/api/v3",
+#                    model="doubao-seed-2-0-mini-260428", api_key=os.environ.get("BYTE_DANCE_API_KEY"), timeout=300000)
+
+#推理
+# model = ChatOpenAI(base_url="https://ark.cn-beijing.volces.com/api/v3",
+#                    model="deepseek-v4-pro-ga-260813", api_key=os.environ.get("BYTE_DANCE_API_KEY"), timeout=300000)
+
 
 async def stream():
-    async for chuck in qwenModel.astream("菊池病是什么"):
+    async for chuck in model.astream("菊池病是什么"):
         print(chuck.content,end="")
 if __name__ == '__main__':
     asyncio.run(stream())

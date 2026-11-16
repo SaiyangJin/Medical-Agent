@@ -3,6 +3,8 @@ from pathlib import Path
 import json
 from sqlalchemy import Text, Select
 from src.langgraph_demo.content_retrieve_graph import graph, trace_list
+from src.visible_trace.bad_case_replay import get_recently_run_id
+
 ROOT = Path(__file__).resolve().parents[2]
 CASES_PATH=ROOT/"data"/"test"/"cases.jsonl"
 from src.langgraph_demo.trace_table_init import request_table
@@ -179,4 +181,4 @@ def indicator_test(run_id:str=default_run_id)->list[str]:
     #檢查每一個指標，如果有一個不過那就維護狀態機is_passed，加入不过列表
 
 if __name__ == '__main__':
-    indicator_test("c3cf7ff5-a60e-4e39-b3b0-b832eafb1863")
+    indicator_test(get_recently_run_id())

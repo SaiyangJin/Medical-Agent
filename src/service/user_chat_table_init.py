@@ -11,6 +11,8 @@ user_chat_request_table = Table("user_chat_request", meta_data,
                                 Column("question", Text, nullable=False),
                                 Column("answer", Text, nullable=False),
                                 Column("trace_id", Text, nullable=False),
+                                Column("thread_id", Text, nullable=True),
+                                Column("session_id", Text, nullable=True),
                                 Column("cost_time", Float, nullable=False),
                                 Column("is_system_error", Boolean, nullable=False),
                                 Column("create_time", DateTime, nullable=False, default=datetime.datetime.now))

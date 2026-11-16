@@ -9,7 +9,7 @@ PATH = ROOT / "data" / "test" / "completeness.jsonl"
 from ragas import SingleTurnSample, EvaluationDataset, evaluate, RunConfig
 from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import faithfulness,FactualCorrectness
-from src.parent_child_chunk.init_model import qwenModel, embeddingModel, engine, backupQwenModel
+from src.parent_child_chunk.init_model import model, embeddingModel, engine, backupModel
 
 #测试构建一个测试数据集
 samples=[]
@@ -36,7 +36,7 @@ dataset = EvaluationDataset(samples)
 
 #运行评测g,传入测试对象，传入llm
 e = evaluate(dataset=dataset
-             ,llm=LangchainLLMWrapper(qwenModel)
+             ,llm=LangchainLLMWrapper(model)
              ,embeddings=embeddingModel#向量模型，暂时不需要
              ,raise_exceptions=True#抛出异常
              ,show_progress=True#展示检索进度条

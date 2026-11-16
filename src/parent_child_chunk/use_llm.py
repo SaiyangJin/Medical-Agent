@@ -6,7 +6,7 @@ from src.parent_child_chunk.content_retrieve import retrieve_by_embedding,retrie
 from langchain_core.prompts import ChatPromptTemplate
 import json
 
-from src.parent_child_chunk.init_model import qwenModel
+from src.parent_child_chunk.init_model import model
 
 
 #已经进入到os.env里面了,可以直接拿
@@ -39,7 +39,7 @@ def use_model(question:str):
     #2,模板类拼贴,from_message就是从一系列的结构化消息来初始化这个模板类
     template = ChatPromptTemplate.from_messages([("system", SYSTEM_PROMPT), ("human", "资料：{info}\n问题：{question}")])
     #3,管道符，把template的输出转化为输入交给llm
-    chain=template|qwenModel
+    chain= template | model
     #4.1,调用对象的invoke函数，获取到资料结果集
     #4.2,拼贴资料语句
     info=""

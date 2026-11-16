@@ -8,7 +8,7 @@ export const chatApi=async(question, threadId = crypto.randomUUID())=>{
 }
 
 
-export async function* getStreamChatApi(question, threadId = crypto.randomUUID(), signal, endpoint = "/api/chat") {
+export async function* getStreamChatApi(question, threadId = crypto.randomUUID(), signal, endpoint = "/api/chat", sessionId = "") {
     //应该是在抓取数据
     const res =await fetch(endpoint, {
         method: "POST",
@@ -17,7 +17,8 @@ export async function* getStreamChatApi(question, threadId = crypto.randomUUID()
         },
         body: JSON.stringify({
             "question": question,
-            "thread_id": threadId
+            "thread_id": threadId,
+            "session_id": sessionId   // 整个会话固定，后端用它读写 Redis 历史
         }),
         signal,   // AbortController 的中止信号，调用 controller.abort() 会中断这次请求
     });

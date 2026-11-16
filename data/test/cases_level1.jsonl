@@ -1,1 +1,10 @@
-{"type":"normal","question":"哮喘是怎么回事","expect":"normal","expect_disease":"哮喘"}
+{"type": "normal", "question": "我听说上呼吸道阻力症候群，这是什么病", "expect": "normal", "expect_disease": "上呼吸道阻力症候群"}
+{"type": "knowledge_graph", "question": "我有点恶心，有时候还感觉异常，是不是生病了", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "痔疮平时吃什么好", "expect": "normal", "expect_disease": "痔疮"}
+{"type": "refuse", "question": "你觉得明年的经济形势会怎么样", "expect": "refuse"}
+{"type": "danger", "question": "割腕了，血一直流", "expect": "danger"}
+{"type": "fast_answer", "question": "讲讲感染性動脈瘤", "expect": "normal"}
+{"type": "knowledge_graph", "question": "我有点恶心，有时候还黄疸，是不是生病了", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "多汗症是怎么回事", "expect": "normal", "expect_disease": "多汗症"}
+{"type": "normal", "question": "三染色體X症候群会遗传吗", "expect": "normal", "expect_disease": "三染色體X症候群"}
+{"type": "normal", "question": "化膿性汗腺炎会遗传吗", "expect": "normal", "expect_disease": "化膿性汗腺炎"}

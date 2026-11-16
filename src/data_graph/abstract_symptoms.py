@@ -1,6 +1,6 @@
 from langchain_core.messages import AIMessage
 
-from src.parent_child_chunk.init_model import qwenModel
+from src.parent_child_chunk.init_model import model
 import json
 from pathlib import Path
 
@@ -13,8 +13,15 @@ AFTER_HANDLE_DATA_PATH = ROOT / "data" / "graph" / "after_handle.jsonl"
 
 def save_abstracted_data():
     #拿到抽取的数据
-    with open(AFTER_HANDLE_DATA_PATH,'r',encoding="utf-8") as f:
-        disease_symptom_dict=json.loads(f.read())[0]
+    disease_symptom_dict={}
+    with open(ABSTRACT_OUTPUT_PATH,'r',encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            # 每行是 [{病: [[症状, 依据句], ...]}, ...]，取第一个元素
+            disease_symptom_dict.update(json.load(f)[0])
+
 
     #把res1.content解析成列表数据结构,取出疾病-症状字典{"病1":[("症状1","相关句子1"),("症状2","相关句子2")]}
 
@@ -113,7 +120,7 @@ def abstract() :
             count+=1
             if count%20==0:
                 prompt_info = ABSTRACT_PROMPT + info
-                res = qwenModel.invoke(prompt_info)
+                res = model.invoke(prompt_info)
                 #每20次读取写入一次文件
                 with open(ABSTRACT_OUTPUT_PATH,'a',encoding='utf-8') as f1:
                     f1.write(res.content+"\n")
@@ -125,7 +132,7 @@ def abstract() :
             jsonLines.append(jsonLine)
             info += "\n"+"[" + jsonLine['disease'] + "]" + "[" + jsonLine['title'] + "]" + jsonLine['text']
     prompt_info = ABSTRACT_PROMPT + info
-    res = qwenModel.invoke(prompt_info)
+    res = model.invoke(prompt_info)
     #每20次读取写入一次文件
     with open(ABSTRACT_OUTPUT_PATH,'a',encoding='utf-8') as f1:
         f1.write(res.content)
@@ -136,5 +143,5 @@ def abstract() :
     # return res
 
 if __name__ == '__main__':
-    abstract()
-    # save_abstracted_data()
+    # abstract()
+    save_abstracted_data()

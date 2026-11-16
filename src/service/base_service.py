@@ -23,18 +23,24 @@ from pathlib import Path
 import time
 
 from src.langgraph_demo.content_retrieve_graph import  trace_list, builder
+from src.langgraph_demo.history_store import load_history, append_turn
 
 ROOT = Path(__file__).resolve().parents[2]
 CASES_PATH=ROOT/"data"/"test"/"cases.jsonl"
 
+#还没有用户体系，先固定；接登录后从 token 里取
+USER_ID = "32508"
+
 #创建一个DTO
 class AskRequest(BaseModel):
     question: str
-    thread_id: str #前端生成，一个对话一个thread_id
+    thread_id: str #前端生成，一轮请求一个 thread_id（checkpointer 用）
+    session_id: str = "" #前端生成，整个会话固定（Redis 历史用）
 
 class RetryRequest(BaseModel):
     question: str
-    thread_id: str #前端生成，一个对话一个thread_id
+    thread_id: str #前端生成，一轮请求一个 thread_id（checkpointer 用）
+    session_id: str = "" #前端生成，整个会话固定（Redis 历史用）
 
 class AskResponse(BaseModel):
     code: int
@@ -100,6 +106,7 @@ def chat(retryRequest:RetryRequest):
 async def generate_object_retry(retryRequest: RetryRequest):
     question = retryRequest.question
     thread_id = retryRequest.thread_id
+    session_id = retryRequest.session_id
     config={"configurable":{"thread_id": thread_id}} # 前端生成，一个对话一个thread_id,这是配置
 
     start_time = time.time()
@@ -125,6 +132,8 @@ async def generate_object_retry(retryRequest: RetryRequest):
             state = await app.state.graph.aget_state(config)
             final_answer=state.values.get("answer", "")
         if final_answer:
+            #续跑完成后同样写回历史
+            append_turn(USER_ID, session_id, question, final_answer)
             yield f"event: done\ndata: {json.dumps(final_answer,ensure_ascii=False)}\n\n"
 
     except Exception:
@@ -133,6 +142,8 @@ async def generate_object_retry(retryRequest: RetryRequest):
             conn.execute(insert(user_chat_request_table), {
                 "question": question,
                 "trace_id": thread_id,  # 一次请求一个trace_id
+                "thread_id": thread_id,
+                "session_id": session_id,
                 "answer": answer,
                 "cost_time": time.time() - start_time,
                 "is_system_error": True
@@ -147,6 +158,8 @@ async def generate_object_retry(retryRequest: RetryRequest):
         conn.execute(insert(user_chat_request_table), {
             "question": question,
             "trace_id": thread_id,  # 一次请求一个trace_id
+            "thread_id": thread_id,
+            "session_id": session_id,
             "answer": answer,
             "cost_time": time.time() - start_time,
             "is_system_error": False
@@ -157,14 +170,18 @@ async def generate_object_retry(retryRequest: RetryRequest):
 async def generate_object(askRequest: AskRequest):
     question = askRequest.question
     thread_id=askRequest.thread_id
+    session_id=askRequest.session_id
     config={"configurable":{"thread_id":thread_id}} # 前端生成，一个对话一个thread_id,这是配置
+
+    #从 Redis 取出本会话的历史，随输入一起塞进图的 State
+    history=load_history(USER_ID, session_id)
 
     start_time = time.time()
     answer = ""
     final_answer=""
     try:
         #启动图的同时，监听里面的事件，这边监听一个流式块和一个最终答案，顺便传入一个config配置，config配置的东西就是线程id，用于标记本次请求，然后下一次可以恢复本次请求
-        async for ev in app.state.graph.astream_events(input={"question": question, "trace_id": thread_id}, version="v2",config=config):
+        async for ev in app.state.graph.astream_events(input={"question": question, "trace_id": thread_id, "history": history}, version="v2",config=config):
             if ev["event"] == "on_chat_model_stream":
                 if ev["data"]["chunk"].content:
                     yield f"data: {json.dumps(ev['data']['chunk'].content,ensure_ascii=False)}\n\n"
@@ -177,6 +194,8 @@ async def generate_object(askRequest: AskRequest):
                 #     final_answer = ev["data"]["output"]["answer"]
         print("final_answer:",final_answer)
         if final_answer:
+            #本轮正常结束才写历史；被停止/异常的轮次不写
+            append_turn(USER_ID, session_id, question, final_answer)
             yield f"event: done\ndata: {json.dumps(final_answer,ensure_ascii=False)}\n\n"
     except Exception as e:
         # 报错返回500
@@ -184,6 +203,8 @@ async def generate_object(askRequest: AskRequest):
             conn.execute(insert(user_chat_request_table), {
                 "question": question,
                 "trace_id": thread_id,  # 一次请求一个trace_id
+                "thread_id": thread_id,
+                "session_id": session_id,
                 "answer": answer,
                 "cost_time": time.time() - start_time,
                 "is_system_error": True
@@ -198,6 +219,8 @@ async def generate_object(askRequest: AskRequest):
         conn.execute(insert(user_chat_request_table), {
             "question": question,
             "trace_id": thread_id,  # 一次请求一个trace_id
+            "thread_id": thread_id,
+            "session_id": session_id,
             "answer": answer,
             "cost_time": time.time() - start_time,
             "is_system_error": False

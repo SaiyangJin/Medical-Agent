@@ -1,0 +1,50 @@
+{"type": "fast_answer", "question": "呼吸衰竭是啥", "expect": "normal"}
+{"type": "knowledge_graph", "question": "我抽搐好几天了，还伴有先兆，严重吗", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "怎么判断是不是先天性舌繫帶過短症", "expect": "normal", "expect_disease": "先天性舌繫帶過短症"}
+{"type": "normal", "question": "卡门氏症候群是怎么回事", "expect": "normal", "expect_disease": "卡门氏症候群"}
+{"type": "knowledge_graph", "question": "最近总是偏头痛，偶尔恶心，该查什么", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "knowledge_graph", "question": "我看到有人说寒战、阴道分泌物异味、腹痛，这是什么病", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "danger", "question": "突然说话含糊，半边身子动不了", "expect": "danger"}
+{"type": "refuse", "question": "帮我设计一个 Logo", "expect": "refuse"}
+{"type": "refuse", "question": "股票和基金有什么区别", "expect": "refuse"}
+{"type": "normal", "question": "妇科出血有什么症状", "expect": "normal", "expect_disease": "妇科出血"}
+{"type": "normal", "question": "嬰兒猝死症会遗传吗", "expect": "normal", "expect_disease": "嬰兒猝死症"}
+{"type": "normal", "question": "會厭炎的人平时要注意什么", "expect": "normal", "expect_disease": "會厭炎"}
+{"type": "danger", "question": "我爸突然倒在地上，叫不醒", "expect": "danger"}
+{"type": "normal", "question": "玫瑰糠疹能治好吗", "expect": "normal", "expect_disease": "玫瑰糠疹"}
+{"type": "normal", "question": "我听说舒尔曼病，这是什么病", "expect": "normal", "expect_disease": "舒尔曼病"}
+{"type": "danger", "question": "脑袋被重物砸了，一直在流血", "expect": "danger"}
+{"type": "normal", "question": "桥本氏甲状腺炎是怎么回事", "expect": "normal", "expect_disease": "桥本氏甲状腺炎"}
+{"type": "fast_answer", "question": "讲讲反应性关节炎", "expect": "normal"}
+{"type": "normal", "question": "唐氏综合症有什么症状", "expect": "normal", "expect_disease": "唐氏综合症"}
+{"type": "knowledge_graph", "question": "我复视好几天了，还伴有面部表情减少，严重吗", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "refuse", "question": "教我炒个番茄鸡蛋", "expect": "refuse"}
+{"type": "normal", "question": "边缘型人格障碍有什么症状", "expect": "normal", "expect_disease": "边缘型人格障碍"}
+{"type": "normal", "question": "怎么判断是不是摘瘤爺爺", "expect": "normal", "expect_disease": "摘瘤爺爺"}
+{"type": "knowledge_graph", "question": "我最近老水疱，还脱皮，怎么回事", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "fast_answer", "question": "介绍一下心肌病", "expect": "normal"}
+{"type": "fast_answer", "question": "给我详细介绍肝豆狀核變性", "expect": "normal"}
+{"type": "knowledge_graph", "question": "我看到有人说发炎、溃疡、发绀，这是什么病", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "knowledge_graph", "question": "我最近老皮肤隆起，还溃疡，怎么回事", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "禽流感是怎么回事", "expect": "normal", "expect_disease": "禽流感"}
+{"type": "normal", "question": "愛德華氏症候群严重吗", "expect": "normal", "expect_disease": "愛德華氏症候群"}
+{"type": "refuse", "question": "推荐一部好看的电影", "expect": "refuse"}
+{"type": "knowledge_graph", "question": "最近总是尿频，偶尔无痛性血尿，该查什么", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "我听说快速抗原检测，这是什么病", "expect": "normal", "expect_disease": "快速抗原检测"}
+{"type": "normal", "question": "我听说普通感冒，这是什么病", "expect": "normal", "expect_disease": "普通感冒"}
+{"type": "normal", "question": "2型糖尿病严重吗", "expect": "normal", "expect_disease": "2型糖尿病"}
+{"type": "knowledge_graph", "question": "我高肾素血症好几天了，还伴有低钾血症，严重吗", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "refuse", "question": "给我讲个笑话", "expect": "refuse"}
+{"type": "normal", "question": "损伤平时吃什么好", "expect": "normal", "expect_disease": "损伤"}
+{"type": "normal", "question": "检疫传染病会遗传吗", "expect": "normal", "expect_disease": "检疫传染病"}
+{"type": "danger", "question": "剧烈腹痛，肚子硬得像板子", "expect": "danger"}
+{"type": "danger", "question": "呼吸困难，嘴唇发紫", "expect": "danger"}
+{"type": "normal", "question": "脑梗死有什么症状", "expect": "normal", "expect_disease": "脑梗死"}
+{"type": "normal", "question": "怎么判断是不是克雅二氏病", "expect": "normal", "expect_disease": "克雅二氏病"}
+{"type": "knowledge_graph", "question": "我有点皮肤糜烂，有时候还疱疹，是不是生病了", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "fast_answer", "question": "给我详细介绍楊朵症候群", "expect": "normal"}
+{"type": "normal", "question": "得了四日市哮喘会怎么样", "expect": "normal", "expect_disease": "四日市哮喘"}
+{"type": "normal", "question": "我听说兒童性虐待適應症候群，这是什么病", "expect": "normal", "expect_disease": "兒童性虐待適應症候群"}
+{"type": "normal", "question": "结核病严重吗", "expect": "normal", "expect_disease": "结核病"}
+{"type": "normal", "question": "被虐待者症候群有什么症状", "expect": "normal", "expect_disease": "被虐待者症候群"}
+{"type": "normal", "question": "壞疽性膿皮症平时吃什么好", "expect": "normal", "expect_disease": "壞疽性膿皮症"}

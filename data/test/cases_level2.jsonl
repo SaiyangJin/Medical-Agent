@@ -1,10 +1,20 @@
-{"type":"normal","question":"高血压是怎么回事","expect":"normal","expect_disease":"高血压"}
-{"type":"normal","question":"糖尿病是怎么回事","expect":"normal","expect_disease":"糖尿病"}
-{"type":"normal","question":"冠心病是怎么回事","expect":"normal","expect_disease":"冠心病"}
-{"type":"normal","question":"哮喘是怎么回事","expect":"normal","expect_disease":"哮喘"}
-{"type":"normal","question":"抑郁症是怎么回事","expect":"normal","expect_disease":"抑郁症"}
-{"type":"normal","question":"阿尔茨海默病是怎么回事","expect":"normal","expect_disease":"阿尔茨海默病"}
-{"type":"normal","question":"慢性肾病是怎么回事","expect":"normal","expect_disease":"慢性肾病"}
-{"type":"normal","question":"类风湿关节炎是怎么回事","expect":"normal","expect_disease":"类风湿关节炎"}
-{"type":"normal","question":"乙肝是怎么回事","expect":"normal","expect_disease":"乙肝"}
-{"type":"normal","question":"痛风是怎么回事","expect":"normal","expect_disease":"痛风"}
+{"type": "normal", "question": "昏迷会遗传吗", "expect": "normal", "expect_disease": "昏迷"}
+{"type": "normal", "question": "塵肺病严重吗", "expect": "normal", "expect_disease": "塵肺病"}
+{"type": "knowledge_graph", "question": "我最近老压痛，还疼痛，怎么回事", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "手足口病会遗传吗", "expect": "normal", "expect_disease": "手足口病"}
+{"type": "fast_answer", "question": "给我详细介绍三叉神經痛", "expect": "normal"}
+{"type": "refuse", "question": "给我讲个笑话", "expect": "refuse"}
+{"type": "normal", "question": "得了弥漫性婴儿纤维瘤病会怎么样", "expect": "normal", "expect_disease": "弥漫性婴儿纤维瘤病"}
+{"type": "refuse", "question": "如何追到喜欢的女生", "expect": "refuse"}
+{"type": "danger", "question": "呼吸困难，嘴唇发紫", "expect": "danger"}
+{"type": "normal", "question": "得了手腳搖動会怎么样", "expect": "normal", "expect_disease": "手腳搖動"}
+{"type": "knowledge_graph", "question": "最近总是肌肉僵硬，偶尔肿胀，该查什么", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "中耳炎有什么症状", "expect": "normal", "expect_disease": "中耳炎"}
+{"type": "danger", "question": "我爸突然倒在地上，叫不醒", "expect": "danger"}
+{"type": "normal", "question": "脑膜炎有什么症状", "expect": "normal", "expect_disease": "脑膜炎"}
+{"type": "knowledge_graph", "question": "最近总是呼吸困难，偶尔运动能力下降，该查什么", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "normal", "question": "得了布魯格達氏症候群会怎么样", "expect": "normal", "expect_disease": "布魯格達氏症候群"}
+{"type": "normal", "question": "X染色體易裂症有什么症状", "expect": "normal", "expect_disease": "X染色體易裂症"}
+{"type": "knowledge_graph", "question": "我有点将嘴巴抬出水面，有时候还无法抓住救援设备，是不是生病了", "expect": "normal", "expect_graph_doc_num": 1}
+{"type": "fast_answer", "question": "介绍一下心脸皮肤综合征", "expect": "normal"}
+{"type": "normal", "question": "上呼吸道感染的人平时要注意什么", "expect": "normal", "expect_disease": "上呼吸道感染"}

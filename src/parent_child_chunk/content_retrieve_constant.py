@@ -126,4 +126,6 @@ label:默认值为"normal"
 text_symptom_dict_list:默认值为空列表[]
 danger_answer:默认值为空字符串""
 reason:默认值为空字符串""
+
+[14]注意返回格式：返回json对象{}即可，不要返回json数组[{}]，最后的格式化输出也是一样，不要返回[{}]
 """
