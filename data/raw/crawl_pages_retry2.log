@@ -1,0 +1,25 @@
+总计 703  已完成 1213  本次待抓 7
+    api.wikimedia.org 失败（HTTPStatusError）
+    zh.wikipedia.org 失败（HTTPStatusError）
+  [FAIL] 心 (臟腑) — RuntimeError
+    zh.wikipedia.org 失败（HTTPStatusError）
+    api.wikimedia.org 失败（HTTPStatusError）
+  [FAIL] 衰老 (生物学) — RuntimeError
+    api.wikimedia.org 失败（HTTPStatusError）
+    zh.wikipedia.org 失败（HTTPStatusError）
+  [FAIL] 青盲 (眼病) — RuntimeError
+    zh.wikipedia.org 失败（HTTPStatusError）
+    api.wikimedia.org 失败（HTTPStatusError）
+  [FAIL] 中風 (中醫) — RuntimeError
+    api.wikimedia.org 失败（HTTPStatusError）
+    zh.wikipedia.org 失败（HTTPStatusError）
+  [FAIL] 傷寒 (中醫) — RuntimeError
+    zh.wikipedia.org 失败（HTTPStatusError）
+    HTTP 429，等 27s 后重试（1/1）
+    api.wikimedia.org 失败（HTTPStatusError）
+  [FAIL] 大腸 (臟腑) — RuntimeError
+    api.wikimedia.org 失败（HTTPStatusError）
+    zh.wikipedia.org 失败（HTTPStatusError）
+  [FAIL] 小腸 (臟腑) — RuntimeError
+[OK] 本次新增 0 条 -> C:\Users\30580\Desktop\projects\LangChain-Medical-Agent\data\raw\pages.jsonl
+[WARN] 7 条失败 -> C:\Users\30580\Desktop\projects\LangChain-Medical-Agent\data\raw\fetch_failures.json（直接重跑本脚本即可补抓）

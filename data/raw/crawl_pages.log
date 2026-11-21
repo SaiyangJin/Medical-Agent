@@ -1,0 +1,189 @@
+总计 703  已完成 672  本次待抓 548
+    HTTP 429，等 5s 后重试（1/1）
+  进度 20/548  已用 1.0 分钟  预计还需 26.9 分钟
+    HTTP 429，等 7s 后重试（1/1）
+    HTTP 429，等 34s 后重试（1/1）
+  进度 40/548  已用 2.6 分钟  预计还需 32.7 分钟
+    HTTP 429，等 34s 后重试（1/1）
+    HTTP 429，等 35s 后重试（1/1）
+  进度 60/548  已用 4.6 分钟  预计还需 37.3 分钟
+    HTTP 429，等 33s 后重试（1/1）
+    zh.wikipedia.org 失败（HTTPStatusError）
+    api.wikimedia.org 失败（HTTPStatusError）
+  [FAIL] 心 (臟腑) — RuntimeError
+    HTTP 429，等 39s 后重试（1/1）
+  进度 80/548  已用 6.6 分钟  预计还需 38.7 分钟
+    HTTP 429，等 34s 后重试（1/1）
+    HTTP 429，等 35s 后重试（1/1）
+    api.wikimedia.org 失败（HTTPStatusError）
+    zh.wikipedia.org 失败（HTTPStatusError）
+  [FAIL] 衰老 (生物学) — RuntimeError
+  进度 100/548  已用 8.6 分钟  预计还需 38.5 分钟
+    HTTP 429，等 39s 后重试（1/1）
+    HTTP 429，等 34s 后重试（1/1）
+  进度 120/548  已用 10.7 分钟  预计还需 38.0 分钟
+    zh.wikipedia.org 失败（HTTPStatusError）
+    api.wikimedia.org 失败（HTTPStatusError）
+  [FAIL] 青盲 (眼病) — RuntimeError
+    HTTP 429，等 39s 后重试（1/1）
+    HTTP 429，等 34s 后重试（1/1）
+  进度 140/548  已用 12.7 分钟  预计还需 37.0 分钟
+    HTTP 429，等 35s 后重试（1/1）
+    HTTP 429，等 35s 后重试（1/1）
+  进度 160/548  已用 14.7 分钟  预计还需 35.7 分钟
+    HTTP 429，等 34s 后重试（1/1）
+    HTTP 429，等 16s 后重试（1/1）
+  进度 180/548  已用 20.7 分钟  预计还需 42.4 分钟
+    HTTP 429，等 32s 后重试（1/1）
+    zh.wikipedia.org 失败（HTTPStatusError）
+    api.wikimedia.org 失败（HTTPStatusError）
+  [FAIL] 中風 (中醫) — RuntimeError
+    HTTP 429，等 38s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+  [FAIL] 乳房囊腫 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+  [FAIL] 乳房肿块 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+  [FAIL] 乳痂 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+  [FAIL] 乳癌 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+  [FAIL] 乳碱综合征 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+  [FAIL] 乳糜泻 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+  进度 200/548  已用 24.6 分钟  预计还需 42.8 分钟
+    HTTP 429，等 21s 后重试（1/1）
+    ReadTimeout，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+  [FAIL] 低血容量性休克 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+  [FAIL] 低血糖 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+  [FAIL] 便血 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+  [FAIL] 保持社交距離 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+  [FAIL] 假性延髓情绪 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+  [FAIL] 假性醛固酮减少症 — RuntimeError
+    zh.wikipedia.org 失败（HTTPStatusError）
+    api.wikimedia.org 失败（HTTPStatusError）
+  [FAIL] 傷寒 (中醫) — RuntimeError
+    HTTP 429，等 15s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+  进度 240/548  已用 31.0 分钟  预计还需 39.7 分钟
+    HTTP 429，等 28s 后重试（1/1）
+    HTTP 429，等 21s 后重试（1/1）
+  进度 260/548  已用 32.7 分钟  预计还需 36.2 分钟
+    HTTP 429，等 32s 后重试（1/1）
+    HTTP 429，等 31s 后重试（1/1）
+  进度 280/548  已用 34.7 分钟  预计还需 33.2 分钟
+    HTTP 429，等 32s 后重试（1/1）
+    HTTP 429，等 31s 后重试（1/1）
+  进度 300/548  已用 36.7 分钟  预计还需 30.4 分钟
+    HTTP 429，等 32s 后重试（1/1）
+    HTTP 429，等 31s 后重试（1/1）
+  进度 320/548  已用 38.7 分钟  预计还需 27.6 分钟
+    HTTP 429，等 32s 后重试（1/1）
+    api.wikimedia.org 失败（HTTPStatusError）
+    zh.wikipedia.org 失败（HTTPStatusError）
+  [FAIL] 大腸 (臟腑) — RuntimeError
+    HTTP 429，等 36s 后重试（1/1）
+  进度 340/548  已用 40.8 分钟  预计还需 24.9 分钟
+    HTTP 429，等 31s 后重试（1/1）
+    api.wikimedia.org 失败（HTTPStatusError）
+    zh.wikipedia.org 失败（HTTPStatusError）
+  [FAIL] 小腸 (臟腑) — RuntimeError
+    HTTP 429，等 35s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+  [FAIL] 少尿症 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+  [FAIL] 少陽病 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+  [FAIL] 尼曼匹克症 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+  进度 360/548  已用 43.8 分钟  预计还需 22.9 分钟
+    HTTP 429，等 25s 后重试（1/1）
+    ConnectError，等 1s 后重试（1/1）
+    ReadTimeout，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+  [FAIL] 弗里德希氏共济失调 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    zh.wikipedia.org 失败（RuntimeError）
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+  [FAIL] 张海超开胸验肺事件 — RuntimeError
+    ConnectError，等 1s 后重试（1/1）
+    api.wikimedia.org 失败（RuntimeError）
+    HTTP 429，等 31s 后重试（1/1）
+  进度 400/548  已用 48.8 分钟  预计还需 18.0 分钟
+    HTTP 429，等 32s 后重试（1/1）
+    HTTP 429，等 31s 后重试（1/1）
+  进度 420/548  已用 50.8 分钟  预计还需 15.5 分钟
+    HTTP 429，等 31s 后重试（1/1）
+    HTTP 429，等 32s 后重试（1/1）
+  进度 440/548  已用 52.8 分钟  预计还需 12.9 分钟
+    HTTP 429，等 33s 后重试（1/1）
+    HTTP 429，等 32s 后重试（1/1）
+  进度 460/548  已用 54.8 分钟  预计还需 10.5 分钟
+    HTTP 429，等 30s 后重试（1/1）
+    HTTP 429，等 30s 后重试（1/1）
+  进度 480/548  已用 56.7 分钟  预计还需 8.0 分钟
+    HTTP 429，等 31s 后重试（1/1）
+    HTTP 429，等 32s 后重试（1/1）
+  进度 500/548  已用 58.7 分钟  预计还需 5.6 分钟
+    HTTP 429，等 32s 后重试（1/1）
+  进度 520/548  已用 60.2 分钟  预计还需 3.2 分钟
+    HTTP 429，等 8s 后重试（1/1）
+    HTTP 429，等 30s 后重试（1/1）
+  进度 540/548  已用 61.9 分钟  预计还需 0.9 分钟
+    HTTP 429，等 29s 后重试（1/1）
+  进度 548/548  已用 62.8 分钟  预计还需 0.0 分钟
+[OK] 本次新增 524 条 -> C:\Users\30580\Desktop\projects\LangChain-Medical-Agent\data\raw\pages.jsonl
+[WARN] 24 条失败 -> C:\Users\30580\Desktop\projects\LangChain-Medical-Agent\data\raw\fetch_failures.json（直接重跑本脚本即可补抓）
