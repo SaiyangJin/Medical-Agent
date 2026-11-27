@@ -14,6 +14,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel
 from sqlalchemy.dialects.mysql import insert
+from sse_starlette import EventSourceResponse
 from starlette.responses import StreamingResponse
 
 from src.langgraph_demo.trace_table_init import request_table, trace_table
@@ -91,16 +92,29 @@ async def all_exception_handler(request:Request,exc:Exception):
 
 #主逻辑函数
 
-
+#StreamingResponse负责把生成的文本塞入htp连接中
+#generate_object是生成器，负责yield文本
 @app.post("/chat",response_model=AskResponse)
 def chat(askRequest:AskRequest):
     # return AskResponse(code=200, msg="", data={"answer":answer})
-    return StreamingResponse(generate_object(askRequest),media_type="text/event-stream")
+
+    #框架封装的返回对象
+    return EventSourceResponse(generate_object(askRequest))
+
+    # return StreamingResponse(generate_object(askRequest),media_type="text/event-stream")
 
 @app.post("/retry",response_model=AskResponse)
 def chat(retryRequest:RetryRequest):
     # return AskResponse(code=200, msg="", data={"answer":answer})
-    return StreamingResponse(generate_object_retry(retryRequest),media_type="text/event-stream")
+    # return StreamingResponse(generate_object_retry(retryRequest),media_type="text/event-stream")
+
+    return EventSourceResponse(generate_object_retry(retryRequest))
+
+@app.post("/test")
+async def normal_test():
+    return "test"
+
+
 
 
 async def generate_object_retry(retryRequest: RetryRequest):
@@ -117,7 +131,8 @@ async def generate_object_retry(retryRequest: RetryRequest):
         async for ev in app.state.graph.astream_events(None, version="v2",config=config):
             if ev["event"] == "on_chat_model_stream":
                 if ev["data"]["chunk"].content:
-                    yield f"data: {json.dumps(ev['data']['chunk'].content,ensure_ascii=False)}\n\n"
+                    # yield f"data: {json.dumps(ev['data']['chunk'].content,ensure_ascii=False)}\n\n"
+                    yield {"data": ev['data']['chunk'].content}
             elif ev["event"]=="on_chain_end":
                 if "data" in ev:
                     if "output" in ev["data"]:
@@ -134,7 +149,8 @@ async def generate_object_retry(retryRequest: RetryRequest):
         if final_answer:
             #续跑完成后同样写回历史
             append_turn(USER_ID, session_id, question, final_answer)
-            yield f"event: done\ndata: {json.dumps(final_answer,ensure_ascii=False)}\n\n"
+            # yield f"event: done\ndata: {json.dumps(final_answer,ensure_ascii=False)}\n\n"
+            yield {"data": final_answer,"event": "done"}
 
     except Exception:
         # 报错返回500
@@ -166,6 +182,7 @@ async def generate_object_retry(retryRequest: RetryRequest):
         })
 
 
+#监听langgraph流式事件，拼装流式输出
 
 async def generate_object(askRequest: AskRequest):
     question = askRequest.question
@@ -184,7 +201,8 @@ async def generate_object(askRequest: AskRequest):
         async for ev in app.state.graph.astream_events(input={"question": question, "trace_id": thread_id, "history": history}, version="v2",config=config):
             if ev["event"] == "on_chat_model_stream":
                 if ev["data"]["chunk"].content:
-                    yield f"data: {json.dumps(ev['data']['chunk'].content,ensure_ascii=False)}\n\n"
+                    # yield f"data: {json.dumps(ev['data']['chunk'].content,ensure_ascii=False)}\n\n"
+                    yield {"data": ev['data']['chunk'].content}
             elif ev["event"]=="on_chain_end":
                 if "data" in ev:
                     if "output" in ev["data"]:
@@ -194,9 +212,10 @@ async def generate_object(askRequest: AskRequest):
                 #     final_answer = ev["data"]["output"]["answer"]
         print("final_answer:",final_answer)
         if final_answer:
-            #本轮正常结束才写历史；被停止/异常的轮次不写
+            #本轮正常结束才写入Redis做会话历史；被停止/异常的轮次不写
             append_turn(USER_ID, session_id, question, final_answer)
-            yield f"event: done\ndata: {json.dumps(final_answer,ensure_ascii=False)}\n\n"
+            # yield f"event: done\ndata: {json.dumps(final_answer,ensure_ascii=False)}\n\n"
+            yield {"data": final_answer,"event": "done"}
     except Exception as e:
         # 报错返回500
         with engine.begin() as conn:

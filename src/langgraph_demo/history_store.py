@@ -33,6 +33,7 @@ def load_history(user_id: str, session_id: str) -> list[dict]:
         return []
 
 
+# 写入本轮问答到 Redis
 def append_turn(user_id: str, session_id: str, question: str, answer: str) -> None:
     """追加本轮问答，裁剪到最近 MAX_TURNS 轮，并刷新 TTL。"""
     if not session_id or not answer:

@@ -31,31 +31,36 @@ export async function* getStreamChatApi(question, threadId = crypto.randomUUID()
         if (done) break;
         // stream:true 防止中文多字节字符跨 chunk 被切成乱码
         buffer += textDecoder.decode(value, { stream: true });
-
-        let idx;
-        //获取的文本段按照 "\n\n" 分割
+        let idx;2
+        buffer = buffer.replace(/\r\n/g, '\n')
+        //因为网络块是按照 "\r\n\r\n" 分的，获取的文本段按照 "\r\n\r\n" 分割
+        console.log("buffer",buffer,buffer.indexOf("\n\n"))
         while ((idx = buffer.indexOf("\n\n")) !== -1) {
+
             const raw = buffer.slice(0, idx);
-            buffer = buffer.slice(idx + 2);
+            buffer = buffer.slice(idx + 4);
             yield parseOneMessage(raw);
         }
     }
     if (buffer.trim()) yield parseOneMessage(buffer);
 }
 
+// 单个sse网络块："event:done \n data:你 \n data:好" 这是需要解析的
 const parseOneMessage=(message)=>{
-    let data=""
+    const dataLines = []
     let event="token"
     //先把message每一行遍历出来
-    for (const chunk of message.split("\n")){
-        //如果一行以data开头，那就直接把后面的数据赋值给data
+
+    for (let chunk of message.split("\n")){
+        //你用了框架，所以靠的/r/n分隔，/r去掉
+        if (chunk.endsWith('\r')) chunk = chunk.slice(0, -1)
+        //如果一行以data开头，说明是数据，追加最终列表
         if(chunk.startsWith("data: ")){
-            //提取出子串，slice(开始位置，结束位置)
-             data += JSON.parse(chunk.slice(6));
+            dataLines.push(chunk.slice(5).replace(/^ /, ""));// 切片 5 而不是 6：SSE 允许 "data:xxx" 无空格，这里只去掉一个协议空格
         }else if(chunk.startsWith("event: ")){
             // "event: " 是 7 个字符（含冒号后的空格），slice(6) 会切出 " done"
-            event = chunk.slice(7);
+            event = chunk.slice(6).trim();
         }
     }
-    return {event,data}
+    return {event,data: dataLines.join("\n")}
 }
